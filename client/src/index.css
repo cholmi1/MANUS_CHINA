@@ -255,6 +255,10 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .reset-checks, .reset-notes { padding: 0; border: 0; background: transparent; font-size: 12px; font-weight: 700; }
 .reset-checks { border-bottom: 1px solid var(--vermilion); color: var(--vermilion); }
 .reset-notes { border-bottom: 1px solid var(--ink-soft); color: var(--ink-soft); }
+.export-records { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 8px 11px; border: 1px solid var(--jade); background: var(--jade); color: white; font-size: 11px; font-weight: 700; transition: transform 150ms ease, background-color 150ms ease; }
+.export-records:hover { background: #1f5b53; }
+.export-records:active { transform: scale(.97); }
+.export-records:disabled { cursor: wait; opacity: .62; }
 
 .recovery-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; margin-top: 27px; border: 1px solid var(--line); background: var(--line); }
 .recovery-card { min-height: 258px; padding: 21px; background: var(--paper); }

@@ -22,6 +22,7 @@ import {
   Clock3,
   Copy,
   ExternalLink,
+  FileSpreadsheet,
   Info,
   ImagePlus,
   LoaderCircle,
@@ -361,6 +362,7 @@ export default function Home() {
   const upsertRecordMutation = trpc.fieldRecords.upsert.useMutation();
   const uploadPhotoMutation = trpc.fieldRecords.uploadPhoto.useMutation();
   const deletePhotoMutation = trpc.fieldRecords.deletePhoto.useMutation();
+  const exportRecordsMutation = trpc.fieldRecords.export.useMutation();
 
   const tripStatus = useMemo(getTripStatus, []);
   const [area, setArea] = useState<Area>(getInitialArea);
@@ -498,6 +500,30 @@ export default function Home() {
       setToast("첨부 사진을 목록에서 삭제했습니다.");
     } catch {
       setToast("사진을 삭제하지 못했습니다. 다시 시도해 주세요.");
+    }
+  };
+
+  const handleExportRecords = async () => {
+    if (!isAuthenticated) {
+      startLogin();
+      return;
+    }
+    try {
+      const exported = await exportRecordsMutation.mutateAsync();
+      const binary = window.atob(exported.dataBase64);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: exported.mimeType }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = exported.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setToast(`${exported.recordCount}개 상담 기록을 엑셀로 내보냈습니다.`);
+    } catch (error) {
+      console.error(error);
+      setToast("엑셀 파일을 만들지 못했습니다. 다시 시도해 주세요.");
     }
   };
 
@@ -683,7 +709,7 @@ export default function Home() {
                   </section>
                 ))}
               </div>
-              <div className="check-actions"><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button></div>
+              <div className="check-actions"><button className="export-records" type="button" onClick={() => void handleExportRecords()} disabled={exportRecordsMutation.isPending}><FileSpreadsheet size={15} />{exportRecordsMutation.isPending ? "엑셀 생성 중" : "상담 기록 엑셀 내보내기"}</button><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button></div>
             </section>
           )}
 

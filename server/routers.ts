@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { addFieldRecordPhoto, deleteFieldRecordPhotoForUser, listFieldRecordsForUser, upsertFieldRecord } from "./db";
+import { createFieldRecordExport } from "./fieldRecordExport";
 import { decodeBase64FieldPhoto, safePhotoFileName } from "./fieldRecordUtils";
 import { storagePut } from "./storage";
 import { systemRouter } from "./_core/systemRouter";
@@ -32,6 +33,10 @@ export const appRouter = router({
   }),
   fieldRecords: router({
     list: protectedProcedure.query(({ ctx }) => listFieldRecordsForUser(ctx.user.id)),
+    export: protectedProcedure.mutation(async ({ ctx }) => {
+      const records = await listFieldRecordsForUser(ctx.user.id);
+      return createFieldRecordExport(records);
+    }),
     upsert: protectedProcedure.input(recordInput).mutation(({ ctx, input }) => upsertFieldRecord(ctx.user.id, input)),
     uploadPhoto: protectedProcedure.input(recordInput.extend({
       fileName: z.string().min(1).max(255),
