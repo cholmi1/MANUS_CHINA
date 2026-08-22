@@ -1,0 +1,27 @@
+[build]
+  command = "pnpm run build:netlify"
+  publish = "dist/public"
+
+[build.environment]
+  NODE_VERSION = "22"
+  PNPM_VERSION = "10.4.1"
+
+# Keep the existing Manus Express/tRPC backend as the runtime for auth, data,
+# exports, and S3-backed user files while Netlify serves the Vite frontend.
+[[redirects]]
+  from = "/api/*"
+  to = "https://clauderedesi-zh8ahnsr.manus.space/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/manus-storage/*"
+  to = "https://clauderedesi-zh8ahnsr.manus.space/manus-storage/:splat"
+  status = 200
+  force = true
+
+# Serve the Vite entry document for any client-side route instead of Netlify's 404.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
