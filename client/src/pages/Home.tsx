@@ -34,6 +34,14 @@ import {
 type Area = "days" | "places" | "checklist" | "rest" | "bookings";
 type EventTone = "move" | "focus" | "meeting" | "finish";
 
+const areas: Area[] = ["days", "places", "checklist", "rest", "bookings"];
+
+function getInitialArea(): Area {
+  if (typeof window === "undefined") return "days";
+  const hash = window.location.hash.replace("#", "");
+  return areas.includes(hash as Area) ? hash as Area : "days";
+}
+
 type Destination = {
   name: string;
   address: string;
@@ -327,7 +335,7 @@ function getMapUrls(destination: Destination) {
 
 export default function Home() {
   const tripStatus = useMemo(getTripStatus, []);
-  const [area, setArea] = useState<Area>("days");
+  const [area, setArea] = useState<Area>(getInitialArea);
   const [activeDay, setActiveDay] = useState(tripStatus.activeDay);
   const [selectedDestination, setSelectedDestination] = useState<Destination | null>(null);
   const [toast, setToast] = useState("");
@@ -345,7 +353,6 @@ export default function Home() {
       return {};
     }
   });
-  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
@@ -368,6 +375,12 @@ export default function Home() {
     return () => window.removeEventListener("keydown", dismiss);
   }, []);
 
+  useEffect(() => {
+    const syncArea = () => setArea(getInitialArea());
+    window.addEventListener("hashchange", syncArea);
+    return () => window.removeEventListener("hashchange", syncArea);
+  }, []);
+
   const currentDay = days.find((day) => day.id === activeDay) ?? days[0];
   const checkTotal = checklistGroups.flatMap((group) => group.items.map((_, index) => `${group.id}-${index}`));
   const completed = checkTotal.filter((id) => checkState[id]).length;
@@ -378,6 +391,7 @@ export default function Home() {
 
   const navigate = (nextArea: Area) => {
     setArea(nextArea);
+    window.history.replaceState(null, "", `#${nextArea}`);
     setMobileOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -540,33 +554,33 @@ export default function Home() {
                   <section className="check-group" key={group.id}>
                     <div className="check-group-head"><span>{group.label}</span><small>{group.items.filter((_, index) => checkState[`${group.id}-${index}`]).length} / {group.items.length}</small></div>
                     <div>
+                      {group.id === "record" && <div className="record-form-head"><span>기록 항목</span><span>현장 메모</span></div>}
                       {group.items.map((item, index) => {
                         const id = `${group.id}-${index}`;
                         const hasNote = Boolean(noteState[id]?.trim());
                         const isRecordItem = group.id === "record";
-                        return <div className="check-item" key={id}>
-                          <label className={checkState[id] ? "done" : ""}>
+                        if (isRecordItem) return <div className={`record-form-row ${checkState[id] ? "done" : ""}`} key={id}>
+                          <label className="record-item-label">
                             <input type="checkbox" checked={Boolean(checkState[id])} onChange={() => setCheckState((current) => ({ ...current, [id]: !current[id] }))} />
                             <span className="box"><Check size={14} /></span>
                             <span>{item}</span>
-                            {isRecordItem && hasNote && <span className="memo-mark">메모</span>}
                           </label>
-                          {isRecordItem && <div className="record-note">
-                            <button className={openNoteId === id ? "open" : ""} type="button" onClick={() => setOpenNoteId((current) => current === id ? null : id)} aria-expanded={openNoteId === id}>
-                              <BookOpen size={13} />{hasNote ? "현장 메모 수정" : "현장 메모 작성"}<ChevronRight size={13} />
-                            </button>
-                            {openNoteId === id && <div className="note-editor">
-                              <div><label htmlFor={`note-${id}`}>현장 메모</label><span>기기에 자동 저장</span></div>
-                              <textarea id={`note-${id}`} value={noteState[id] ?? ""} onChange={(event) => setNoteState((current) => ({ ...current, [id]: event.target.value }))} placeholder="상담 내용, 담당자 답변, 견적 조건, 확인할 증빙을 기록하세요." rows={4} autoFocus />
-                            </div>}
-                          </div>}
+                          <div className="record-note-field">
+                            <div><span>FIELD NOTE</span>{hasNote ? <b>저장됨</b> : <small>기기에 자동 저장</small>}</div>
+                            <textarea id={`note-${id}`} aria-label={`${item} 메모`} value={noteState[id] ?? ""} onChange={(event) => setNoteState((current) => ({ ...current, [id]: event.target.value }))} placeholder="상담 내용, 담당자 답변, 견적 조건, 확인할 증빙을 적으세요." rows={3} />
+                          </div>
                         </div>;
+                        return <label className={`simple-check-label ${checkState[id] ? "done" : ""}`} key={id}>
+                          <input type="checkbox" checked={Boolean(checkState[id])} onChange={() => setCheckState((current) => ({ ...current, [id]: !current[id] }))} />
+                          <span className="box"><Check size={14} /></span>
+                          <span>{item}</span>
+                        </label>;
                       })}
                     </div>
                   </section>
                 ))}
               </div>
-              <div className="check-actions"><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button><button className="reset-notes" type="button" onClick={() => { setNoteState({}); setOpenNoteId(null); }}>상담 메모 전체 삭제</button></div>
+              <div className="check-actions"><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button><button className="reset-notes" type="button" onClick={() => setNoteState({})}>상담 메모 전체 삭제</button></div>
             </section>
           )}
 
