@@ -362,6 +362,7 @@ export default function Home() {
   const upsertRecordMutation = trpc.fieldRecords.upsert.useMutation();
   const uploadPhotoMutation = trpc.fieldRecords.uploadPhoto.useMutation();
   const deletePhotoMutation = trpc.fieldRecords.deletePhoto.useMutation();
+  const updatePhotoCaptionMutation = trpc.fieldRecords.updatePhotoCaption.useMutation();
   const exportRecordsMutation = trpc.fieldRecords.export.useMutation();
 
   const tripStatus = useMemo(getTripStatus, []);
@@ -376,9 +377,11 @@ export default function Home() {
       return {};
     }
   });
-  const [recordDrafts, setRecordDrafts] = useState<Record<string, { note: string; isChecked: boolean }>>({});
+  const [recordDrafts, setRecordDrafts] = useState<Record<string, { note: string; isChecked: boolean; vendorName: string }>>({});
+  const [photoCaptionDrafts, setPhotoCaptionDrafts] = useState<Record<number, string>>({});
   const [savingRecordKey, setSavingRecordKey] = useState<string | null>(null);
   const [uploadingRecordKey, setUploadingRecordKey] = useState<string | null>(null);
+  const [savingCaptionId, setSavingCaptionId] = useState<number | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
@@ -405,7 +408,7 @@ export default function Home() {
 
   const currentDay = days.find((day) => day.id === activeDay) ?? days[0];
   const storedRecords = useMemo(() => Object.fromEntries((fieldRecordsQuery.data ?? []).map((record) => [record.recordKey, record])), [fieldRecordsQuery.data]);
-  const getRecordValue = (recordKey: string) => recordDrafts[recordKey] ?? { note: storedRecords[recordKey]?.note ?? "", isChecked: storedRecords[recordKey]?.isChecked ?? false };
+  const getRecordValue = (recordKey: string) => recordDrafts[recordKey] ?? { note: storedRecords[recordKey]?.note ?? "", isChecked: storedRecords[recordKey]?.isChecked ?? false, vendorName: storedRecords[recordKey]?.vendorName ?? "" };
   const checkTotal = checklistGroups.flatMap((group) => group.items.map((_, index) => `${group.id}-${index}`));
   const completed = checkTotal.filter((id) => id.startsWith("record-") ? getRecordValue(id).isChecked : checkState[id]).length;
   const progress = Math.round((completed / checkTotal.length) * 100);
@@ -437,7 +440,7 @@ export default function Home() {
     }
     setSavingRecordKey(recordKey);
     try {
-      await upsertRecordMutation.mutateAsync({ recordKey, label, note: nextValue.note, isChecked: nextValue.isChecked });
+      await upsertRecordMutation.mutateAsync({ recordKey, label, vendorName: nextValue.vendorName, note: nextValue.note, isChecked: nextValue.isChecked });
       await utils.fieldRecords.list.invalidate();
       setRecordDrafts((current) => {
         const next = { ...current };
@@ -452,7 +455,7 @@ export default function Home() {
     }
   };
 
-  const updateRecordDraft = (recordKey: string, patch: Partial<{ note: string; isChecked: boolean }>) => {
+  const updateRecordDraft = (recordKey: string, patch: Partial<{ note: string; isChecked: boolean; vendorName: string }>) => {
     setRecordDrafts((current) => ({ ...current, [recordKey]: { ...getRecordValue(recordKey), ...patch } }));
   };
 
@@ -477,6 +480,7 @@ export default function Home() {
       await uploadPhotoMutation.mutateAsync({
         recordKey,
         label,
+        vendorName: current.vendorName,
         note: current.note,
         isChecked: current.isChecked,
         fileName: file.name,
@@ -500,6 +504,28 @@ export default function Home() {
       setToast("첨부 사진을 목록에서 삭제했습니다.");
     } catch {
       setToast("사진을 삭제하지 못했습니다. 다시 시도해 주세요.");
+    }
+  };
+
+  const savePhotoCaption = async (photoId: number, nextCaption: string) => {
+    if (!isAuthenticated) {
+      startLogin();
+      return;
+    }
+    setSavingCaptionId(photoId);
+    try {
+      await updatePhotoCaptionMutation.mutateAsync({ photoId, caption: nextCaption.trim() });
+      await utils.fieldRecords.list.invalidate();
+      setPhotoCaptionDrafts((current) => {
+        const next = { ...current };
+        delete next[photoId];
+        return next;
+      });
+      setToast("사진 캡션을 저장했습니다.");
+    } catch {
+      setToast("사진 캡션을 저장하지 못했습니다.");
+    } finally {
+      setSavingCaptionId(null);
     }
   };
 
@@ -691,10 +717,11 @@ export default function Home() {
                           </label>
                           <div className="record-note-field">
                             <div className="record-note-meta"><span>FIELD NOTE</span><div><small>{savedRecord ? "계정에 저장됨" : "저장 전"}</small><button type="button" onClick={() => void saveRecord(id, item)} disabled={savingRecordKey === id || uploadingRecordKey === id}>{savingRecordKey === id ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />}{savingRecordKey === id ? "저장 중" : "저장"}</button></div></div>
+                            <label className="vendor-field" htmlFor={`vendor-${id}`}><span>업체명</span><input id={`vendor-${id}`} className="vendor-input" value={value.vendorName} onChange={(event) => updateRecordDraft(id, { vendorName: event.target.value })} onBlur={() => void saveRecord(id, item)} placeholder="예: Shenzhen ABC Components" maxLength={160} /></label>
                             <textarea id={`note-${id}`} aria-label={`${item} 메모`} value={value.note} onChange={(event) => updateRecordDraft(id, { note: event.target.value })} onBlur={() => void saveRecord(id, item)} placeholder="상담 내용, 담당자 답변, 견적 조건, 확인할 증빙을 적으세요." rows={3} />
                             <div className="record-photo-area">
                               <label className={uploadingRecordKey === id ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handlePhotoUpload(id, item, file); }} /><span>{uploadingRecordKey === id ? <LoaderCircle size={14} className="spin" /> : <ImagePlus size={14} />}{uploadingRecordKey === id ? "사진 업로드 중" : "사진 촬영·업로드"}</span></label>
-                              {savedRecord?.photos?.length ? <div className="photo-grid">{savedRecord.photos.map((photo) => <figure key={photo.id}><img src={photo.url} alt={`${item} 첨부 사진`} /><button type="button" onClick={() => void handlePhotoDelete(photo.id)} aria-label={`${photo.fileName} 삭제`}><Trash2 size={13} /></button><figcaption>{photo.fileName}</figcaption></figure>)}</div> : null}
+                              {savedRecord?.photos?.length ? <div className="photo-grid">{savedRecord.photos.map((photo) => <figure key={photo.id}><img src={photo.url} alt={`${item} 첨부 사진`} /><button type="button" onClick={() => void handlePhotoDelete(photo.id)} aria-label={`${photo.fileName} 삭제`}><Trash2 size={13} /></button><figcaption><span>{photo.fileName}</span><input className="photo-caption-input" aria-label={`${photo.fileName} 캡션`} value={photoCaptionDrafts[photo.id] ?? photo.caption ?? ""} onChange={(event) => setPhotoCaptionDrafts((current) => ({ ...current, [photo.id]: event.target.value }))} onBlur={(event) => void savePhotoCaption(photo.id, event.target.value)} placeholder="사진 캡션" maxLength={500} disabled={savingCaptionId === photo.id} /></figcaption></figure>)}</div> : null}
                             </div>
                           </div>
                         </div>;

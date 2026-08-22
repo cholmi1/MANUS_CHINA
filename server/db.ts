@@ -92,6 +92,7 @@ export async function getUserByOpenId(openId: string) {
 export type FieldRecordInput = {
   recordKey: string;
   label: string;
+  vendorName: string;
   note: string;
   isChecked: boolean;
 };
@@ -125,11 +126,13 @@ export async function upsertFieldRecord(userId: number, input: FieldRecordInput)
     userId,
     recordKey: input.recordKey,
     label: input.label,
+    vendorName: input.vendorName,
     note: input.note,
     isChecked: input.isChecked ? 1 : 0,
   }).onDuplicateKeyUpdate({
     set: {
       label: input.label,
+      vendorName: input.vendorName,
       note: input.note,
       isChecked: input.isChecked ? 1 : 0,
       updatedAt: new Date(),
@@ -156,4 +159,16 @@ export async function deleteFieldRecordPhotoForUser(userId: number, photoId: num
     .where(and(eq(fieldRecordPhotos.id, photoId), eq(fieldRecords.userId, userId))).limit(1);
   if (!owned) throw new Error("삭제할 사진을 찾을 수 없습니다.");
   await db.delete(fieldRecordPhotos).where(eq(fieldRecordPhotos.id, photoId));
+}
+
+export async function updateFieldRecordPhotoCaptionForUser(userId: number, photoId: number, caption: string) {
+  const db = await requireDb();
+  const [owned] = await db.select({ photoId: fieldRecordPhotos.id }).from(fieldRecordPhotos)
+    .innerJoin(fieldRecords, eq(fieldRecordPhotos.recordId, fieldRecords.id))
+    .where(and(eq(fieldRecordPhotos.id, photoId), eq(fieldRecords.userId, userId))).limit(1);
+  if (!owned) throw new Error("수정할 사진을 찾을 수 없습니다.");
+  await db.update(fieldRecordPhotos).set({ caption }).where(eq(fieldRecordPhotos.id, photoId));
+  const [updated] = await db.select().from(fieldRecordPhotos).where(eq(fieldRecordPhotos.id, photoId)).limit(1);
+  if (!updated) throw new Error("사진 캡션을 저장하지 못했습니다.");
+  return updated;
 }

@@ -31,6 +31,7 @@ export const fieldRecords = mysqlTable("field_records", {
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   recordKey: varchar("recordKey", { length: 64 }).notNull(),
   label: varchar("label", { length: 255 }).notNull(),
+  vendorName: varchar("vendorName", { length: 160 }).notNull().default(""),
   note: text("note").notNull(),
   isChecked: tinyint("isChecked").notNull().default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -46,6 +47,7 @@ export const fieldRecordPhotos = mysqlTable("field_record_photos", {
   storageKey: varchar("storageKey", { length: 512 }).notNull(),
   url: varchar("url", { length: 1024 }).notNull(),
   fileName: varchar("fileName", { length: 255 }).notNull(),
+  caption: varchar("caption", { length: 500 }).notNull().default(""),
   mimeType: varchar("mimeType", { length: 100 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

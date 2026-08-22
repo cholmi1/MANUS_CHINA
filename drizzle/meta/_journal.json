@@ -8,6 +8,13 @@
       "when": 1787420248377,
       "tag": "0000_shallow_wither",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1787423339063,
+      "tag": "0001_curved_leopardon",
+      "breakpoints": true
     }
   ]
 }

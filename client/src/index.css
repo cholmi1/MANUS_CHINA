@@ -226,6 +226,12 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .record-note-field textarea { display: block; width: 100%; min-width: 0; min-height: 76px; margin-top: 6px; padding: 7px 9px; border: 1px solid #ccd6d1; border-radius: 0; outline: none; resize: vertical; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 12px; line-height: 1.6; }
 .record-note-field textarea:focus { border-color: var(--jade); box-shadow: 0 0 0 3px rgb(40 111 102 / .12); }
 .record-note-field textarea::placeholder { color: #98a19e; }
+.vendor-field { display: grid; grid-template-columns: 53px minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 8px; padding: 7px 9px; border: 1px solid #ccd6d1; background: #fdfcf8; }
+.vendor-field > span { color: var(--jade); font-family: var(--mono); font-size: 8px; font-weight: 600; letter-spacing: .08em; }
+.check-group .vendor-input, .check-group .photo-caption-input { position: static; width: 100%; min-width: 0; opacity: 1; pointer-events: auto; }
+.vendor-input { border: 0; outline: none; background: transparent; color: var(--ink); font-family: var(--sans); font-size: 12px; }
+.vendor-input::placeholder, .photo-caption-input::placeholder { color: #98a19e; }
+.vendor-field:focus-within { border-color: var(--jade); box-shadow: 0 0 0 3px rgb(40 111 102 / .12); }
 .record-note-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .record-note-meta > span { color: var(--jade); font-family: var(--mono); font-size: 8px; font-weight: 600; letter-spacing: .1em; }
 .record-note-meta > div { display: inline-flex; align-items: center; gap: 8px; }
@@ -243,7 +249,10 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .photo-grid figure { position: relative; min-width: 0; margin: 0; padding: 4px; border: 1px solid var(--line); background: var(--paper); }
 .photo-grid img { display: block; width: 100%; aspect-ratio: 1.25; object-fit: cover; }
 .photo-grid button { position: absolute; top: 7px; right: 7px; display: grid; width: 24px; height: 24px; place-items: center; border: 0; background: rgb(21 34 44 / .82); color: white; }
-.photo-grid figcaption { overflow: hidden; margin-top: 4px; color: var(--ink-soft); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.photo-grid figcaption { display: grid; gap: 4px; min-width: 0; margin-top: 4px; color: var(--ink-soft); font-size: 8px; }
+.photo-grid figcaption > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.photo-caption-input { padding: 4px; border: 1px solid var(--line); outline: none; background: #fbfbf8; color: var(--ink); font-family: var(--sans); font-size: 9px; line-height: 1.3; }
+.photo-caption-input:focus { border-color: var(--jade); box-shadow: 0 0 0 2px rgb(40 111 102 / .12); }
 .record-login-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; padding: 14px; border-left: 3px solid var(--vermilion); background: var(--vermilion-soft); }
 .record-login-banner > div { display: flex; align-items: center; gap: 10px; }
 .record-login-banner svg { flex: 0 0 auto; color: var(--vermilion); }

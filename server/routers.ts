@@ -2,7 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
-import { addFieldRecordPhoto, deleteFieldRecordPhotoForUser, listFieldRecordsForUser, upsertFieldRecord } from "./db";
+import { addFieldRecordPhoto, deleteFieldRecordPhotoForUser, listFieldRecordsForUser, updateFieldRecordPhotoCaptionForUser, upsertFieldRecord } from "./db";
 import { createFieldRecordExport } from "./fieldRecordExport";
 import { decodeBase64FieldPhoto, safePhotoFileName } from "./fieldRecordUtils";
 import { storagePut } from "./storage";
@@ -12,6 +12,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 const recordInput = z.object({
   recordKey: z.string().min(1).max(64),
   label: z.string().min(1).max(255),
+  vendorName: z.string().max(160),
   note: z.string().max(10_000),
   isChecked: z.boolean(),
 });
@@ -53,8 +54,11 @@ export const appRouter = router({
         console.error("[FieldRecord] Photo upload failed", error);
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "사진 업로드에 실패했습니다. 다시 시도해 주세요." });
       }
-      const photo = await addFieldRecordPhoto(record.id, { storageKey: stored.key, url: stored.url, fileName, mimeType: input.mimeType });
+      const photo = await addFieldRecordPhoto(record.id, { storageKey: stored.key, url: stored.url, fileName, caption: "", mimeType: input.mimeType });
       return { record, photo };
+    }),
+    updatePhotoCaption: protectedProcedure.input(z.object({ photoId: z.number().int().positive(), caption: z.string().max(500) })).mutation(async ({ ctx, input }) => {
+      return updateFieldRecordPhotoCaptionForUser(ctx.user.id, input.photoId, input.caption);
     }),
     deletePhoto: protectedProcedure.input(z.object({ photoId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       await deleteFieldRecordPhotoForUser(ctx.user.id, input.photoId);
