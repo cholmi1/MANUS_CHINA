@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { createFieldRecordExport } from "./fieldRecordExport";
+import { createFieldRecordExport, flattenVendorFoldersForExport } from "./fieldRecordExport";
 
 const onePixelPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL0NwAAAABJRU5ErkJggg==", "base64");
 
@@ -41,5 +41,26 @@ describe("field record Excel export", () => {
     expect(sheet?.getCell("C5").value).toBe("'=UNSAFE");
     expect(sheet?.getCell("E5").value).toBe("'+TEXT");
     expect(sheet?.getCell("I5").value).toBe("'-CAPTION");
+  });
+
+  it("exports records from the current vendor-folder data shape with vendor sheets and photo captions", async () => {
+    const generatedAt = new Date("2026-08-23T02:30:00.000Z");
+    const records = flattenVendorFoldersForExport([{
+      name: "Shenzhen Nova Tech",
+      consultations: [{
+        recordKey: "record-0", label: "상호 · 담당자", note: "MOQ와 단가를 확인했습니다.", isChecked: true, updatedAt: generatedAt,
+        photos: [{ id: 10, storageKey: "vendors/a.png", url: "/manus-storage/vendors/a.png", fileName: "부스.png", caption: "부스와 담당자 명함", mimeType: "image/png" }],
+      }],
+    }, {
+      name: "Yiwu Horizon Materials",
+      consultations: [{ recordKey: "record-5", label: "납기", note: "생산 리드타임 21일", isChecked: false, updatedAt: generatedAt, photos: [] }],
+    }]);
+    const exportFile = await createFieldRecordExport(records, generatedAt, { thumbnailProvider: async () => ({ buffer: onePixelPng, extension: "png" }) });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Buffer.from(exportFile.dataBase64, "base64"));
+
+    expect(records.map((record) => record.vendorName)).toEqual(["Shenzhen Nova Tech", "Yiwu Horizon Materials"]);
+    expect(workbook.getWorksheet("업체_Shenzhen Nova Tech")?.getCell("I5").value).toBe("부스와 담당자 명함");
+    expect(workbook.getWorksheet("업체_Yiwu Horizon Materials")?.getCell("E5").value).toBe("생산 리드타임 21일");
   });
 });

@@ -1,10 +1,39 @@
 import ExcelJS from "exceljs";
 import sharp from "sharp";
-import type { FieldRecordWithPhotos } from "./db";
 import { storageGetSignedUrl } from "./storage";
 
-type ExportableFieldRecord = Pick<FieldRecordWithPhotos, "recordKey" | "label" | "vendorName" | "note" | "isChecked" | "updatedAt" | "photos">;
-type ExportablePhoto = ExportableFieldRecord["photos"][number];
+export type ExportablePhoto = {
+  id: number;
+  storageKey: string;
+  url: string;
+  fileName: string;
+  caption: string;
+  mimeType: string;
+};
+
+export type ExportableFieldRecord = {
+  recordKey: string;
+  label: string;
+  vendorName: string;
+  note: string;
+  isChecked: boolean;
+  updatedAt: Date;
+  photos: ExportablePhoto[];
+};
+
+export type VendorFolderExportSource = {
+  name: string;
+  consultations: Array<Omit<ExportableFieldRecord, "vendorName">>;
+};
+
+/** Converts the current vendor-folder model into the stable worksheet row shape. */
+export function flattenVendorFoldersForExport(vendorFolders: VendorFolderExportSource[]): ExportableFieldRecord[] {
+  return vendorFolders.flatMap((vendor) => vendor.consultations.map((consultation) => ({
+    ...consultation,
+    vendorName: vendor.name,
+  })));
+}
+
 type Thumbnail = { buffer: Buffer; extension: "png" | "jpeg" };
 type ThumbnailProvider = (photo: ExportablePhoto) => Promise<Thumbnail | null>;
 type Category = { key: string; sheetName: string; title: string };

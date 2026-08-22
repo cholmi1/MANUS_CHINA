@@ -23,6 +23,7 @@ import {
   Copy,
   ExternalLink,
   FileSpreadsheet,
+  FolderKanban,
   Info,
   ImagePlus,
   LoaderCircle,
@@ -35,16 +36,17 @@ import {
   Plane,
   Route,
   Save,
+  ReceiptText,
   TrainFront,
   Trash2,
   Utensils,
   X,
 } from "lucide-react";
 
-type Area = "days" | "places" | "checklist" | "rest" | "bookings";
+type Area = "days" | "places" | "consultations" | "checklist" | "rest" | "bookings" | "expenses";
 type EventTone = "move" | "focus" | "meeting" | "finish";
 
-const areas: Area[] = ["days", "places", "checklist", "rest", "bookings"];
+const areas: Area[] = ["days", "places", "consultations", "checklist", "rest", "bookings", "expenses"];
 
 function getInitialArea(): Area {
   if (typeof window === "undefined") return "days";
@@ -241,45 +243,44 @@ const days: Day[] = [
   },
 ];
 
+const consultationItems = [
+  "상호(중문/영문) · 담당자 · 휴대폰 · 위챗 ID",
+  "부스 위치 — 구역 / 층 / 게이트 / 부스번호",
+  "재질 · 규격(mm) · 두께 · 색상 · 인쇄방식",
+  "단가 · 수량 구간별 단가 · MOQ",
+  "금형비와 인쇄판비를 분리한 견적",
+  "샘플·양산 리드타임 및 초도 납기",
+  "RoHS / REACH 성적서 가능 여부와 사진",
+  "유상 샘플 라벨링 + 부스 전경·명함 동시 촬영",
+];
+
 const checklistGroups = [
   {
-    id: "record",
-    label: "상담 시 필수 기록",
+    id: "departure",
+    label: "출발 전 준비",
     items: [
-      "상호(중문/영문) · 담당자 · 휴대폰 · 위챗 ID",
-      "부스 위치 — 구역 / 층 / 게이트 / 부스번호",
-      "재질 · 규격(mm) · 두께 · 색상 · 인쇄방식",
-      "단가 · 수량 구간별 단가 · MOQ",
-      "금형비와 인쇄판비를 분리한 견적",
-      "샘플·양산 리드타임 및 초도 납기",
-      "RoHS / REACH 성적서 가능 여부와 사진",
-      "유상 샘플 라벨링 + 부스 전경·명함 동시 촬영",
+      "여권 · 비자 · 전자입국신고 QR을 한 폴더에 저장",
+      "Alipay · WeChat 카드 등록과 소액 결제 시험",
+      "중문·영문 명함 200매와 CVT200 중문 스펙시트",
+      "출장용 eSIM · 로밍 · VPN 접속 여부 확인",
     ],
   },
   {
-    id: "material",
-    label: "품목별 핵심 질문",
-    items: [
-      "파우치 — 폼 몰딩, 금형비, 로고 인쇄방식, 5개사 이상",
-      "포장비닐 — OPP/PE 두께, 고주파 밀봉, ESD 표면저항",
-      "완충재 — EPE/EVA/에어쿠션, 성형 정밀도, 낙하시험",
-      "USB — 실용량, Flash 등급, 컨트롤러, 프리로드",
-      "Type-C — USB-IF, AWG, 정격전류, 굴곡, KC·CE·RoHS",
-    ],
-  },
-  {
-    id: "before",
-    label: "출국 전 미완료",
+    id: "reservation",
+    label: "예약 진행 및 증빙",
     items: [
       "이우 통역 예약 — 9/9–9/10, 일 ¥350–400",
-      "컬러박스 내치수 도면 확보",
       "원주행 시외버스 예매 — T2 막차 20:10",
-      "Alipay·WeChat 카드 등록과 소액 결제 시험",
-      "전자입국신고서 작성 및 QR 캡처",
-      "중문·영문 명함 200매와 CVT200 중문 스펙시트",
+      "항공·숙소·고속철 예약 확인서 업로드",
+      "해외여행자 보험 증권과 비상연락처 저장",
     ],
   },
 ];
+
+const expenseCategories = [["transport", "교통비"], ["meals", "식대"], ["lodging", "숙박"], ["communication", "통신"], ["samples", "샘플·구매"], ["interpreter", "통역"], ["fees", "수수료"], ["other", "기타"]] as const;
+type ChecklistDraft = { note: string; isChecked: boolean };
+type ExpenseDraft = { id?: number; category: string; title: string; amount: string; currency: "KRW" | "CNY" | "USD"; spentAt: string; note: string };
+const blankExpenseDraft = (): ExpenseDraft => ({ category: "transport", title: "", amount: "", currency: "KRW", spentAt: new Date().toISOString().slice(0, 10), note: "" });
 
 const researchSections = [
   {
@@ -363,30 +364,48 @@ export default function Home() {
   const uploadPhotoMutation = trpc.fieldRecords.uploadPhoto.useMutation();
   const deletePhotoMutation = trpc.fieldRecords.deletePhoto.useMutation();
   const updatePhotoCaptionMutation = trpc.fieldRecords.updatePhotoCaption.useMutation();
-  const exportRecordsMutation = trpc.fieldRecords.export.useMutation();
+  const exportRecordsMutation = trpc.vendors.export.useMutation();
+  const tripChecklistQuery = trpc.tripChecklist.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const upsertTripChecklistMutation = trpc.tripChecklist.upsert.useMutation();
+  const uploadChecklistEvidenceMutation = trpc.tripChecklist.uploadEvidence.useMutation();
+  const deleteChecklistEvidenceMutation = trpc.tripChecklist.deleteEvidence.useMutation();
+  const expensesQuery = trpc.expenses.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const upsertExpenseMutation = trpc.expenses.upsert.useMutation();
+  const deleteExpenseMutation = trpc.expenses.delete.useMutation();
+  const uploadReceiptMutation = trpc.expenses.uploadReceipt.useMutation();
+  const deleteReceiptMutation = trpc.expenses.deleteReceipt.useMutation();
+  const vendorsQuery = trpc.vendors.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const upsertVendorMutation = trpc.vendors.upsert.useMutation();
+  const deleteVendorMutation = trpc.vendors.delete.useMutation();
+  const upsertVendorConsultationMutation = trpc.vendors.upsertConsultation.useMutation();
+  const uploadVendorConsultationPhotoMutation = trpc.vendors.uploadConsultationPhoto.useMutation();
+  const updateVendorPhotoCaptionMutation = trpc.vendors.updateConsultationPhotoCaption.useMutation();
+  const deleteVendorPhotoMutation = trpc.vendors.deleteConsultationPhoto.useMutation();
 
   const tripStatus = useMemo(getTripStatus, []);
   const [area, setArea] = useState<Area>(getInitialArea);
   const [activeDay, setActiveDay] = useState(tripStatus.activeDay);
   const [selectedDestination, setSelectedDestination] = useState<Destination | null>(null);
   const [toast, setToast] = useState("");
-  const [checkState, setCheckState] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem("cvt200-field-checks") ?? "{}");
-    } catch {
-      return {};
-    }
-  });
   const [recordDrafts, setRecordDrafts] = useState<Record<string, { note: string; isChecked: boolean; vendorName: string }>>({});
   const [photoCaptionDrafts, setPhotoCaptionDrafts] = useState<Record<number, string>>({});
+  const [checklistDrafts, setChecklistDrafts] = useState<Record<string, ChecklistDraft>>({});
+  const [expenseDraft, setExpenseDraft] = useState<ExpenseDraft>(blankExpenseDraft);
+  const [selectedVendorId, setSelectedVendorId] = useState<number | null>(null);
+  const [vendorDraft, setVendorDraft] = useState({ id: undefined as number | undefined, name: "", contactName: "", booth: "" });
+  const [vendorConsultationDrafts, setVendorConsultationDrafts] = useState<Record<string, ChecklistDraft>>({});
+  const [vendorPhotoCaptionDrafts, setVendorPhotoCaptionDrafts] = useState<Record<number, string>>({});
   const [savingRecordKey, setSavingRecordKey] = useState<string | null>(null);
   const [uploadingRecordKey, setUploadingRecordKey] = useState<string | null>(null);
   const [savingCaptionId, setSavingCaptionId] = useState<number | null>(null);
+  const [savingChecklistKey, setSavingChecklistKey] = useState<string | null>(null);
+  const [uploadingChecklistKey, setUploadingChecklistKey] = useState<string | null>(null);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [savingVendor, setSavingVendor] = useState(false);
+  const [savingVendorRecordKey, setSavingVendorRecordKey] = useState<string | null>(null);
+  const [uploadingVendorRecordKey, setUploadingVendorRecordKey] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    window.localStorage.setItem("cvt200-field-checks", JSON.stringify(checkState));
-  }, [checkState]);
 
   useEffect(() => {
     if (!toast) return;
@@ -408,10 +427,15 @@ export default function Home() {
 
   const currentDay = days.find((day) => day.id === activeDay) ?? days[0];
   const storedRecords = useMemo(() => Object.fromEntries((fieldRecordsQuery.data ?? []).map((record) => [record.recordKey, record])), [fieldRecordsQuery.data]);
+  const storedChecklist = useMemo(() => Object.fromEntries((tripChecklistQuery.data ?? []).map((item) => [item.itemKey, item])), [tripChecklistQuery.data]);
+  const selectedVendor = useMemo(() => (vendorsQuery.data ?? []).find((vendor) => vendor.id === selectedVendorId) ?? (vendorsQuery.data ?? [])[0] ?? null, [vendorsQuery.data, selectedVendorId]);
   const getRecordValue = (recordKey: string) => recordDrafts[recordKey] ?? { note: storedRecords[recordKey]?.note ?? "", isChecked: storedRecords[recordKey]?.isChecked ?? false, vendorName: storedRecords[recordKey]?.vendorName ?? "" };
+  const getChecklistValue = (itemKey: string): ChecklistDraft => checklistDrafts[itemKey] ?? { note: storedChecklist[itemKey]?.note ?? "", isChecked: storedChecklist[itemKey]?.isChecked ?? false };
   const checkTotal = checklistGroups.flatMap((group) => group.items.map((_, index) => `${group.id}-${index}`));
-  const completed = checkTotal.filter((id) => id.startsWith("record-") ? getRecordValue(id).isChecked : checkState[id]).length;
+  const completed = checkTotal.filter((id) => getChecklistValue(id).isChecked).length;
   const progress = Math.round((completed / checkTotal.length) * 100);
+  const consultationCompleted = consultationItems.filter((_, index) => selectedVendor?.consultations.find((record) => record.recordKey === `record-${index}`)?.isChecked).length;
+  const expenseTotals = useMemo(() => (expensesQuery.data ?? []).reduce<Record<string, number>>((totals, expense) => ({ ...totals, [expense.currency]: (totals[expense.currency] ?? 0) + expense.amount }), {}), [expensesQuery.data]);
   const heroAction = tripStatus.label.startsWith("D-")
     ? { label: "출발 전 우선", value: "이우 통역 예약", detail: "9/9–9/10 · 일 ¥350–400" }
     : { label: "오늘의 다음 행동", value: currentDay.events[0]?.title ?? "일정 확인", detail: currentDay.events[0]?.time.replace("\n", " — ") ?? "" };
@@ -457,6 +481,61 @@ export default function Home() {
 
   const updateRecordDraft = (recordKey: string, patch: Partial<{ note: string; isChecked: boolean; vendorName: string }>) => {
     setRecordDrafts((current) => ({ ...current, [recordKey]: { ...getRecordValue(recordKey), ...patch } }));
+  };
+
+  const updateChecklistDraft = (itemKey: string, patch: Partial<ChecklistDraft>) => setChecklistDrafts((current) => ({ ...current, [itemKey]: { ...getChecklistValue(itemKey), ...patch } }));
+
+  const saveChecklist = async (itemKey: string, groupKey: string, label: string, nextValue = getChecklistValue(itemKey)) => {
+    if (!isAuthenticated) return startLogin();
+    setSavingChecklistKey(itemKey);
+    try {
+      await upsertTripChecklistMutation.mutateAsync({ itemKey, groupKey, label, note: nextValue.note, isChecked: nextValue.isChecked });
+      await utils.tripChecklist.list.invalidate();
+      setChecklistDrafts((current) => { const next = { ...current }; delete next[itemKey]; return next; });
+      setToast("체크리스트를 저장했습니다.");
+    } catch { setToast("체크리스트를 저장하지 못했습니다."); } finally { setSavingChecklistKey(null); }
+  };
+
+  const handleChecklistEvidenceUpload = async (itemKey: string, groupKey: string, label: string, file?: File) => {
+    if (!file) return;
+    if (!isAuthenticated) return startLogin();
+    if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) return setToast("JPG, PNG, WEBP, PDF 파일을 10MB 이하로 올려주세요.");
+    setUploadingChecklistKey(itemKey);
+    try {
+      const current = getChecklistValue(itemKey);
+      await uploadChecklistEvidenceMutation.mutateAsync({ itemKey, groupKey, label, note: current.note, isChecked: current.isChecked, fileName: file.name, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "application/pdf", dataBase64: await readPhotoAsBase64(file) });
+      await utils.tripChecklist.list.invalidate();
+      setToast("증빙 파일을 첨부했습니다.");
+    } catch { setToast("증빙 파일을 올리지 못했습니다."); } finally { setUploadingChecklistKey(null); }
+  };
+
+  const deleteChecklistEvidence = async (evidenceId: number) => {
+    try { await deleteChecklistEvidenceMutation.mutateAsync({ evidenceId }); await utils.tripChecklist.list.invalidate(); setToast("증빙 파일을 삭제했습니다."); } catch { setToast("증빙 파일을 삭제하지 못했습니다."); }
+  };
+
+  const saveExpense = async () => {
+    if (!isAuthenticated) return startLogin();
+    const amount = Number(expenseDraft.amount.replaceAll(",", ""));
+    if (!expenseDraft.title.trim() || !Number.isInteger(amount) || amount < 0) return setToast("비용명과 0 이상의 금액을 입력해 주세요.");
+    setSavingExpense(true);
+    try {
+      const saved = await upsertExpenseMutation.mutateAsync({ id: expenseDraft.id, category: expenseDraft.category, title: expenseDraft.title.trim(), amount, currency: expenseDraft.currency, spentAt: new Date(`${expenseDraft.spentAt}T12:00:00`), note: expenseDraft.note });
+      setExpenseDraft((current) => ({ ...current, id: saved.id }));
+      await utils.expenses.list.invalidate();
+      setToast("비용 항목을 저장했습니다. 영수증도 첨부할 수 있습니다.");
+    } catch { setToast("비용 항목을 저장하지 못했습니다."); } finally { setSavingExpense(false); }
+  };
+
+  const handleReceiptUpload = async (file?: File) => {
+    if (!file) return;
+    if (!expenseDraft.id) return setToast("먼저 비용 항목을 저장한 뒤 영수증을 첨부해 주세요.");
+    if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) return setToast("JPG, PNG, WEBP, PDF 파일을 10MB 이하로 올려주세요.");
+    setUploadingReceipt(true);
+    try {
+      await uploadReceiptMutation.mutateAsync({ expenseId: expenseDraft.id, fileName: file.name, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp" | "application/pdf", dataBase64: await readPhotoAsBase64(file) });
+      await utils.expenses.list.invalidate();
+      setToast("영수증 파일을 첨부했습니다.");
+    } catch { setToast("영수증 파일을 올리지 못했습니다."); } finally { setUploadingReceipt(false); }
   };
 
   const handlePhotoUpload = async (recordKey: string, label: string, file?: File) => {
@@ -527,6 +606,69 @@ export default function Home() {
     } finally {
       setSavingCaptionId(null);
     }
+  };
+
+  const vendorRecordDraftKey = (vendorId: number, recordKey: string) => `${vendorId}:${recordKey}`;
+  const getVendorRecordValue = (vendorId: number, recordKey: string): ChecklistDraft => vendorConsultationDrafts[vendorRecordDraftKey(vendorId, recordKey)] ?? { note: selectedVendor?.consultations.find((record) => record.recordKey === recordKey)?.note ?? "", isChecked: selectedVendor?.consultations.find((record) => record.recordKey === recordKey)?.isChecked ?? false };
+  const updateVendorRecordDraft = (vendorId: number, recordKey: string, patch: Partial<ChecklistDraft>) => setVendorConsultationDrafts((current) => ({ ...current, [vendorRecordDraftKey(vendorId, recordKey)]: { ...getVendorRecordValue(vendorId, recordKey), ...patch } }));
+
+  const saveVendor = async () => {
+    if (!isAuthenticated) return startLogin();
+    if (!vendorDraft.name.trim()) return setToast("업체명을 입력해 주세요.");
+    setSavingVendor(true);
+    try {
+      const saved = await upsertVendorMutation.mutateAsync({ id: vendorDraft.id, name: vendorDraft.name.trim(), contactName: vendorDraft.contactName.trim(), booth: vendorDraft.booth.trim() });
+      await utils.vendors.list.invalidate();
+      setSelectedVendorId(saved.id);
+      setVendorDraft({ id: saved.id, name: saved.name, contactName: saved.contactName, booth: saved.booth });
+      setToast("업체 폴더를 저장했습니다.");
+    } catch { setToast("업체 폴더를 저장하지 못했습니다."); } finally { setSavingVendor(false); }
+  };
+
+  const selectVendor = (vendor: NonNullable<typeof selectedVendor>) => {
+    setSelectedVendorId(vendor.id);
+    setVendorDraft({ id: vendor.id, name: vendor.name, contactName: vendor.contactName, booth: vendor.booth });
+  };
+
+  const deleteSelectedVendor = async () => {
+    if (!selectedVendor || !window.confirm(`${selectedVendor.name} 업체 폴더와 상담 기록을 삭제할까요?`)) return;
+    try {
+      await deleteVendorMutation.mutateAsync({ vendorId: selectedVendor.id });
+      await utils.vendors.list.invalidate();
+      setSelectedVendorId(null);
+      setVendorDraft({ id: undefined, name: "", contactName: "", booth: "" });
+      setToast("업체 폴더를 삭제했습니다.");
+    } catch { setToast("업체 폴더를 삭제하지 못했습니다."); }
+  };
+
+  const saveVendorConsultation = async (vendorId: number, recordKey: string, label: string, nextValue = getVendorRecordValue(vendorId, recordKey)) => {
+    setSavingVendorRecordKey(recordKey);
+    try {
+      await upsertVendorConsultationMutation.mutateAsync({ vendorId, recordKey, label, note: nextValue.note, isChecked: nextValue.isChecked });
+      await utils.vendors.list.invalidate();
+      setVendorConsultationDrafts((current) => { const next = { ...current }; delete next[vendorRecordDraftKey(vendorId, recordKey)]; return next; });
+      setToast("업체 상담 기록을 저장했습니다.");
+    } catch { setToast("업체 상담 기록을 저장하지 못했습니다."); } finally { setSavingVendorRecordKey(null); }
+  };
+
+  const uploadVendorConsultationPhoto = async (vendorId: number, recordKey: string, label: string, file?: File) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8 * 1024 * 1024) return setToast("JPG, PNG, WEBP 사진을 8MB 이하로 올려주세요.");
+    setUploadingVendorRecordKey(recordKey);
+    try {
+      const value = getVendorRecordValue(vendorId, recordKey);
+      await uploadVendorConsultationPhotoMutation.mutateAsync({ vendorId, recordKey, label, note: value.note, isChecked: value.isChecked, fileName: file.name, mimeType: file.type as "image/jpeg" | "image/png" | "image/webp", dataBase64: await readPhotoAsBase64(file) });
+      await utils.vendors.list.invalidate();
+      setToast("업체 상담 사진을 첨부했습니다.");
+    } catch { setToast("상담 사진을 올리지 못했습니다."); } finally { setUploadingVendorRecordKey(null); }
+  };
+
+  const saveVendorPhotoCaption = async (photoId: number, caption: string) => {
+    try {
+      await updateVendorPhotoCaptionMutation.mutateAsync({ photoId, caption: caption.trim() });
+      await utils.vendors.list.invalidate();
+      setVendorPhotoCaptionDrafts((current) => { const next = { ...current }; delete next[photoId]; return next; });
+    } catch { setToast("상담 사진 캡션을 저장하지 못했습니다."); }
   };
 
   const handleExportRecords = async () => {
@@ -608,9 +750,11 @@ export default function Home() {
             {[
               ["days", CalendarDays, "일정", "Day 1–5"],
               ["places", Map, "조사처", "선전 · 이우"],
+              ["consultations", FolderKanban, "상담기록", `${consultationCompleted}/${consultationItems.length} 완료`],
               ["checklist", ClipboardCheck, "체크리스트", `${completed}/${checkTotal.length} 완료`],
               ["rest", Utensils, "식사 · 휴식", "현장 체력 관리"],
               ["bookings", BookOpen, "예약 · 연락처", "확정 정보"],
+              ["expenses", ReceiptText, "정산서", `${(expensesQuery.data ?? []).length}건 기록`],
             ].map(([id, Icon, label, detail]) => (
               <button className={area === id ? "active" : ""} onClick={() => navigate(id as Area)} key={id as string} type="button">
                 <Icon size={18} /><span><b>{label as string}</b><small>{detail as string}</small></span><ChevronRight size={15} />
@@ -692,51 +836,29 @@ export default function Home() {
             </section>
           )}
 
+          {area === "consultations" && (
+            <section className="content-view" aria-labelledby="consultation-heading">
+              <div className="view-heading checklist-heading"><div><span className="section-kicker">VENDOR CONVERSATIONS</span><h2 id="consultation-heading">업체별 <i>상담 기록</i>을 남깁니다.</h2><p>조사처에서 만난 업체를 폴더로 추가한 뒤, 각 업체의 담당자·부스·상담 내용·현장 사진을 독립적으로 보관합니다.</p></div><div className="consultation-actions"><button className="export-records" type="button" onClick={() => void handleExportRecords()} disabled={exportRecordsMutation.isPending}><FileSpreadsheet size={14} />{exportRecordsMutation.isPending ? "엑셀 생성 중" : "업체별 엑셀"}</button><div className="progress-seal"><strong>{consultationCompleted}<small> / {consultationItems.length}</small></strong><span>선택 업체 완료</span></div></div></div>
+              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>상담 기록과 사진을 저장하려면 로그인하세요.</b><small>저장된 내용은 같은 계정으로 어느 기기에서나 다시 확인할 수 있습니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
+              <div className="vendor-workspace">
+                <aside className="vendor-folder-panel"><div className="vendor-folder-head"><span>업체 폴더</span><small>{(vendorsQuery.data ?? []).length}개</small></div><div className="vendor-folder-list">{(vendorsQuery.data ?? []).map((vendor) => <button type="button" className={selectedVendor?.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => selectVendor(vendor)}><b>{vendor.name}</b><small>{vendor.contactName || vendor.booth || "상담 기록 열기"}</small></button>)}</div><button className="new-vendor-button" type="button" onClick={() => { setSelectedVendorId(null); setVendorDraft({ id: undefined, name: "", contactName: "", booth: "" }); }}>+ 새 업체 폴더</button><div className="vendor-form"><span>VENDOR FOLDER</span><input value={vendorDraft.name} onChange={(event) => setVendorDraft((current) => ({ ...current, name: event.target.value }))} placeholder="업체명 *" maxLength={160} /><input value={vendorDraft.contactName} onChange={(event) => setVendorDraft((current) => ({ ...current, contactName: event.target.value }))} placeholder="담당자" maxLength={120} /><input value={vendorDraft.booth} onChange={(event) => setVendorDraft((current) => ({ ...current, booth: event.target.value }))} placeholder="부스 번호" maxLength={120} /><button type="button" onClick={() => void saveVendor()} disabled={savingVendor}>{savingVendor ? "저장 중" : vendorDraft.id ? "업체 정보 저장" : "업체 폴더 추가"}</button>{selectedVendor && <button className="delete-vendor-button" type="button" onClick={() => void deleteSelectedVendor()}>선택 업체 삭제</button>}</div></aside>
+                <div className="vendor-records-panel">{selectedVendor ? <><div className="vendor-record-title"><span>SELECTED VENDOR</span><h3>{selectedVendor.name}</h3><p>{[selectedVendor.contactName, selectedVendor.booth].filter(Boolean).join(" · ") || "담당자와 부스 정보를 입력해 주세요."}</p></div><div className="check-groups"><section className="check-group"><div className="record-form-head"><span>상담 항목</span><span>이 업체의 현장 메모</span></div>{consultationItems.map((item, index) => {
+                  const id = `record-${index}`; const value = getVendorRecordValue(selectedVendor.id, id); const saved = selectedVendor.consultations.find((record) => record.recordKey === id);
+                  return <div className={`record-form-row ${value.isChecked ? "done" : ""}`} key={id}><label className="record-item-label"><input type="checkbox" checked={value.isChecked} onChange={() => updateVendorRecordDraft(selectedVendor.id, id, { isChecked: !value.isChecked })} /><span className="box"><Check size={14} /></span><span>{item}</span></label><div className="record-note-field"><div className="record-note-meta"><span>FIELD NOTE</span><div><small>{saved ? "이 업체 폴더에 저장됨" : "저장 전"}</small><button type="button" onClick={() => void saveVendorConsultation(selectedVendor.id, id, item)} disabled={savingVendorRecordKey === id || uploadingVendorRecordKey === id}>{savingVendorRecordKey === id ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />}{savingVendorRecordKey === id ? "저장 중" : "저장"}</button></div></div><textarea value={value.note} onChange={(event) => updateVendorRecordDraft(selectedVendor.id, id, { note: event.target.value })} onBlur={() => void saveVendorConsultation(selectedVendor.id, id, item)} placeholder="담당자 답변, MOQ, 단가, 후속 행동을 적으세요." rows={3} /><div className="record-photo-area"><label className={uploadingVendorRecordKey === id ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void uploadVendorConsultationPhoto(selectedVendor.id, id, item, file); }} /><span>{uploadingVendorRecordKey === id ? <LoaderCircle size={14} className="spin" /> : <ImagePlus size={14} />}{uploadingVendorRecordKey === id ? "사진 업로드 중" : "이 업체 사진 첨부"}</span></label>{saved?.photos?.length ? <div className="photo-grid">{saved.photos.map((photo) => <figure key={photo.id}><img src={photo.url} alt={`${selectedVendor.name} ${item} 첨부 사진`} /><button type="button" onClick={() => void (async () => { await deleteVendorPhotoMutation.mutateAsync({ photoId: photo.id }); await utils.vendors.list.invalidate(); })()} aria-label={`${photo.fileName} 삭제`}><Trash2 size={13} /></button><figcaption><span>{photo.fileName}</span><input className="photo-caption-input" value={vendorPhotoCaptionDrafts[photo.id] ?? photo.caption} onChange={(event) => setVendorPhotoCaptionDrafts((current) => ({ ...current, [photo.id]: event.target.value }))} onBlur={(event) => void saveVendorPhotoCaption(photo.id, event.target.value)} placeholder="사진 캡션" maxLength={500} /></figcaption></figure>)}</div> : null}</div></div></div>;
+                })}</section></div></> : <div className="vendor-empty"><FolderKanban size={28} /><h3>첫 업체 폴더를 추가하세요.</h3><p>업체명, 담당자, 부스 번호를 입력하면 업체별 상담 기록과 사진이 서로 섞이지 않고 보관됩니다.</p></div>}</div>
+              </div>
+            </section>
+          )}
+
           {area === "checklist" && (
             <section className="content-view" aria-labelledby="checklist-heading">
-              <div className="view-heading checklist-heading"><div><span className="section-kicker">FIELD RECORD</span><h2 id="checklist-heading">상담의 <i>빈칸을</i> 없앱니다.</h2><p>상담 필수 기록은 계정에 저장되고, 엑셀에서는 카테고리별 시트와 사진 썸네일로 정리됩니다.</p></div><div className="progress-seal"><strong>{completed}<small> / {checkTotal.length}</small></strong><span>기록 완료</span></div></div>
+              <div className="view-heading checklist-heading"><div><span className="section-kicker">PRE-TRIP CONTROL</span><h2 id="checklist-heading">출발 전 <i>준비와 증빙</i>을 확인합니다.</h2><p>준비 상태, 예약 진행 메모와 확인서·보험증·QR 캡처를 항목별로 저장합니다.</p></div><div className="progress-seal"><strong>{completed}<small> / {checkTotal.length}</small></strong><span>준비 완료</span></div></div>
               <div className="progress-line"><i style={{ width: `${progress}%` }} /><span>{progress}% COMPLETE</span></div>
-              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>상담 기록과 사진을 저장하려면 로그인하세요.</b><small>저장된 내용은 같은 계정으로 어느 기기에서나 다시 확인할 수 있습니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
-              <div className="check-groups">
-                {checklistGroups.map((group) => (
-                  <section className="check-group" key={group.id}>
-                    <div className="check-group-head"><span>{group.label}</span><small>{group.items.filter((_, index) => group.id === "record" ? getRecordValue(`${group.id}-${index}`).isChecked : checkState[`${group.id}-${index}`]).length} / {group.items.length}</small></div>
-                    <div>
-                      {group.id === "record" && <div className="record-form-head"><span>기록 항목</span><span>현장 메모</span></div>}
-                      {group.items.map((item, index) => {
-                        const id = `${group.id}-${index}`;
-                        const isRecordItem = group.id === "record";
-                        if (isRecordItem) {
-                          const value = getRecordValue(id);
-                          const savedRecord = storedRecords[id];
-                          return <div className={`record-form-row ${value.isChecked ? "done" : ""}`} key={id}>
-                          <label className="record-item-label">
-                            <input type="checkbox" checked={value.isChecked} onChange={() => updateRecordDraft(id, { isChecked: !value.isChecked })} />
-                            <span className="box"><Check size={14} /></span>
-                            <span>{item}</span>
-                          </label>
-                          <div className="record-note-field">
-                            <div className="record-note-meta"><span>FIELD NOTE</span><div><small>{savedRecord ? "계정에 저장됨" : "저장 전"}</small><button type="button" onClick={() => void saveRecord(id, item)} disabled={savingRecordKey === id || uploadingRecordKey === id}>{savingRecordKey === id ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />}{savingRecordKey === id ? "저장 중" : "저장"}</button></div></div>
-                            <label className="vendor-field" htmlFor={`vendor-${id}`}><span>업체명</span><input id={`vendor-${id}`} className="vendor-input" value={value.vendorName} onChange={(event) => updateRecordDraft(id, { vendorName: event.target.value })} onBlur={() => void saveRecord(id, item)} placeholder="예: Shenzhen ABC Components" maxLength={160} /></label>
-                            <textarea id={`note-${id}`} aria-label={`${item} 메모`} value={value.note} onChange={(event) => updateRecordDraft(id, { note: event.target.value })} onBlur={() => void saveRecord(id, item)} placeholder="상담 내용, 담당자 답변, 견적 조건, 확인할 증빙을 적으세요." rows={3} />
-                            <div className="record-photo-area">
-                              <label className={uploadingRecordKey === id ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handlePhotoUpload(id, item, file); }} /><span>{uploadingRecordKey === id ? <LoaderCircle size={14} className="spin" /> : <ImagePlus size={14} />}{uploadingRecordKey === id ? "사진 업로드 중" : "사진 촬영·업로드"}</span></label>
-                              {savedRecord?.photos?.length ? <div className="photo-grid">{savedRecord.photos.map((photo) => <figure key={photo.id}><img src={photo.url} alt={`${item} 첨부 사진`} /><button type="button" onClick={() => void handlePhotoDelete(photo.id)} aria-label={`${photo.fileName} 삭제`}><Trash2 size={13} /></button><figcaption><span>{photo.fileName}</span><input className="photo-caption-input" aria-label={`${photo.fileName} 캡션`} value={photoCaptionDrafts[photo.id] ?? photo.caption ?? ""} onChange={(event) => setPhotoCaptionDrafts((current) => ({ ...current, [photo.id]: event.target.value }))} onBlur={(event) => void savePhotoCaption(photo.id, event.target.value)} placeholder="사진 캡션" maxLength={500} disabled={savingCaptionId === photo.id} /></figcaption></figure>)}</div> : null}
-                            </div>
-                          </div>
-                        </div>;
-                        }
-                        return <label className={`simple-check-label ${checkState[id] ? "done" : ""}`} key={id}>
-                          <input type="checkbox" checked={Boolean(checkState[id])} onChange={() => setCheckState((current) => ({ ...current, [id]: !current[id] }))} />
-                          <span className="box"><Check size={14} /></span>
-                          <span>{item}</span>
-                        </label>;
-                      })}
-                    </div>
-                  </section>
-                ))}
-              </div>
-              <div className="check-actions"><button className="export-records" type="button" onClick={() => void handleExportRecords()} disabled={exportRecordsMutation.isPending}><FileSpreadsheet size={15} />{exportRecordsMutation.isPending ? "엑셀 생성 중" : "카테고리별 엑셀 내보내기"}</button><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button></div>
+              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>준비 체크와 증빙을 저장하려면 로그인하세요.</b><small>사진·PDF 확인서를 안전하게 계정에 보관합니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
+              <div className="check-groups">{checklistGroups.map((group) => <section className="check-group" key={group.id}><div className="check-group-head"><span>{group.label}</span><small>{group.items.filter((_, index) => getChecklistValue(`${group.id}-${index}`).isChecked).length} / {group.items.length}</small></div>{group.items.map((item, index) => {
+                const itemKey = `${group.id}-${index}`; const value = getChecklistValue(itemKey); const saved = storedChecklist[itemKey];
+                return <article className={`prep-item ${value.isChecked ? "done" : ""}`} key={itemKey}><label><input type="checkbox" checked={value.isChecked} onChange={() => updateChecklistDraft(itemKey, { isChecked: !value.isChecked })} /><span className="box"><Check size={14} /></span><b>{item}</b></label><div className="prep-item-body"><div className="record-note-meta"><span>PRE-TRIP NOTE</span><button type="button" onClick={() => void saveChecklist(itemKey, group.id, item)} disabled={savingChecklistKey === itemKey}>{savingChecklistKey === itemKey ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />}{savingChecklistKey === itemKey ? "저장 중" : "저장"}</button></div><textarea value={value.note} onChange={(event) => updateChecklistDraft(itemKey, { note: event.target.value })} onBlur={() => void saveChecklist(itemKey, group.id, item)} placeholder="예약 진행 상태, 확인번호, 준비 메모를 기록하세요." rows={2} /><div className="proof-row"><label className={uploadingChecklistKey === itemKey ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleChecklistEvidenceUpload(itemKey, group.id, item, file); }} /><span>{uploadingChecklistKey === itemKey ? <LoaderCircle size={14} className="spin" /> : <FileSpreadsheet size={14} />}{uploadingChecklistKey === itemKey ? "파일 업로드 중" : "증빙 사진·PDF 업로드"}</span></label>{saved?.evidence?.map((file) => <a className="proof-file" href={file.url} target="_blank" rel="noreferrer" key={file.id}><FileSpreadsheet size={13} /><span>{file.fileName}</span><button type="button" onClick={(event) => { event.preventDefault(); void deleteChecklistEvidence(file.id); }} aria-label={`${file.fileName} 삭제`}><Trash2 size={12} /></button></a>)}</div></div></article>;
+              })}</section>)}</div>
             </section>
           )}
 
@@ -761,14 +883,26 @@ export default function Home() {
               <div className="method-note"><TrainFront size={20} /><p><b>9/11 환승 규칙.</b> 이우역에서 고속철 지연을 확인하는 즉시 아시아나 예약센터에 연락합니다. 항저우동역에서 공항 이동은 택시 전환(약 ¥180, 60분)을 검토하고, 체크인 마감 14:10을 넘기지 않습니다.</p></div>
             </section>
           )}
+
+          {area === "expenses" && (
+            <section className="content-view" aria-labelledby="expense-heading">
+              <div className="view-heading checklist-heading"><div><span className="section-kicker">TRIP EXPENSE LEDGER</span><h2 id="expense-heading">출장 비용을 <i>항목별로</i> 정리합니다.</h2><p>교통비, 식대, 숙박 등 지출을 기록하고 영수증 사진·PDF를 함께 보관합니다. 통화별 집계는 입력 즉시 갱신됩니다.</p></div><div className="progress-seal"><strong>{(expensesQuery.data ?? []).length}<small> 건</small></strong><span>비용 기록</span></div></div>
+              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>정산서와 영수증을 저장하려면 로그인하세요.</b><small>입력한 비용과 영수증은 계정에 보관됩니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
+              <div className="expense-summary">{(["KRW", "CNY", "USD"] as const).map((currency) => <div key={currency}><span>{currency}</span><strong>{new Intl.NumberFormat("ko-KR").format(expenseTotals[currency] ?? 0)}</strong><small>{currency === "KRW" ? "원" : currency === "CNY" ? "위안" : "달러"}</small></div>)}</div>
+              <section className="expense-editor"><div className="expense-editor-head"><div><span>NEW / EDIT EXPENSE</span><h3>{expenseDraft.id ? "비용 항목 수정" : "새 비용 항목"}</h3></div>{expenseDraft.id && <button type="button" onClick={() => setExpenseDraft(blankExpenseDraft())}>새 항목 작성</button>}</div><div className="expense-category-row">{expenseCategories.map(([key, label]) => <button type="button" className={expenseDraft.category === key ? "active" : ""} onClick={() => setExpenseDraft((current) => ({ ...current, category: key }))} key={key}>{label}</button>)}</div><div className="expense-form-grid"><label><span>비용명</span><input value={expenseDraft.title} onChange={(event) => setExpenseDraft((current) => ({ ...current, title: event.target.value }))} placeholder="예: 선전공항 → 호텔 디디" maxLength={160} /></label><label><span>금액</span><input inputMode="numeric" value={expenseDraft.amount} onChange={(event) => setExpenseDraft((current) => ({ ...current, amount: event.target.value.replace(/[^0-9,]/g, "") }))} placeholder="0" /></label><label><span>통화</span><select value={expenseDraft.currency} onChange={(event) => setExpenseDraft((current) => ({ ...current, currency: event.target.value as ExpenseDraft["currency"] }))}><option value="KRW">KRW · 원</option><option value="CNY">CNY · 위안</option><option value="USD">USD · 달러</option></select></label><label><span>지출일</span><input type="date" value={expenseDraft.spentAt} onChange={(event) => setExpenseDraft((current) => ({ ...current, spentAt: event.target.value }))} /></label></div><label className="expense-note"><span>상세 메모</span><textarea value={expenseDraft.note} onChange={(event) => setExpenseDraft((current) => ({ ...current, note: event.target.value }))} placeholder="결제 수단, 동행자, 정산 메모를 적으세요." rows={3} /></label><div className="expense-actions"><button className="expense-save" type="button" onClick={() => void saveExpense()} disabled={savingExpense}>{savingExpense ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{savingExpense ? "저장 중" : "비용 저장"}</button><label className={uploadingReceipt ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleReceiptUpload(file); }} /><span>{uploadingReceipt ? <LoaderCircle size={14} className="spin" /> : <FileSpreadsheet size={14} />}{uploadingReceipt ? "영수증 업로드 중" : "영수증 사진·PDF 첨부"}</span></label></div></section>
+              <section className="expense-list"><div className="check-group-head"><span>입력된 비용</span><small>{(expensesQuery.data ?? []).length}건</small></div>{(expensesQuery.data ?? []).length ? (expensesQuery.data ?? []).map((expense) => <article className="expense-row" key={expense.id}><div className="expense-row-main"><span>{expenseCategories.find(([key]) => key === expense.category)?.[1] ?? "기타"}</span><div><h3>{expense.title}</h3><p>{new Date(expense.spentAt).toLocaleDateString("ko-KR")} · {expense.note || "메모 없음"}</p></div><strong>{expense.currency} {new Intl.NumberFormat("ko-KR").format(expense.amount)}</strong></div><div className="receipt-list">{expense.receipts.map((receipt) => <span key={receipt.id}><a href={receipt.url} target="_blank" rel="noreferrer"><FileSpreadsheet size={13} />{receipt.fileName}</a><button type="button" onClick={() => void (async () => { try { await deleteReceiptMutation.mutateAsync({ receiptId: receipt.id }); await utils.expenses.list.invalidate(); setToast("영수증을 삭제했습니다."); } catch { setToast("영수증을 삭제하지 못했습니다."); } })()} aria-label={`${receipt.fileName} 삭제`}><Trash2 size={12} /></button></span>)}</div><div className="expense-row-actions"><button type="button" onClick={() => setExpenseDraft({ id: expense.id, category: expense.category, title: expense.title, amount: String(expense.amount), currency: expense.currency as ExpenseDraft["currency"], spentAt: new Date(expense.spentAt).toISOString().slice(0, 10), note: expense.note })}>수정</button><button type="button" onClick={() => void (async () => { try { await deleteExpenseMutation.mutateAsync({ expenseId: expense.id }); await utils.expenses.list.invalidate(); if (expenseDraft.id === expense.id) setExpenseDraft(blankExpenseDraft()); setToast("비용 항목을 삭제했습니다."); } catch { setToast("비용 항목을 삭제하지 못했습니다."); } })()}>삭제</button></div></article>) : <div className="expense-empty"><ReceiptText size={24} /><p>아직 기록한 비용이 없습니다. 위에서 카테고리와 금액을 선택해 첫 정산 항목을 추가하세요.</p></div>}</section>
+            </section>
+          )}
         </main>
       </div>
 
       <nav className="mobile-nav" aria-label="모바일 바로가기">
         <button className={area === "days" ? "active" : ""} type="button" onClick={() => navigate("days")}><CalendarDays size={18} /><span>일정</span></button>
         <button className={area === "places" ? "active" : ""} type="button" onClick={() => navigate("places")}><Map size={18} /><span>조사처</span></button>
+        <button className={area === "consultations" ? "active" : ""} type="button" onClick={() => navigate("consultations")}><FolderKanban size={18} /><span>상담</span></button>
         <button className={area === "checklist" ? "active" : ""} type="button" onClick={() => navigate("checklist")}><ClipboardCheck size={18} /><span>체크</span></button>
         <button className={area === "bookings" ? "active" : ""} type="button" onClick={() => navigate("bookings")}><BookOpen size={18} /><span>예약</span></button>
+        <button className={area === "expenses" ? "active" : ""} type="button" onClick={() => navigate("expenses")}><ReceiptText size={18} /><span>정산</span></button>
       </nav>
 
       {selectedDestination && <DestinationModal destination={selectedDestination} onClose={() => setSelectedDestination(null)} onCopy={handleCopy} />}
