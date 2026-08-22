@@ -4,6 +4,9 @@
  * over dashboard density or decorative cards.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { startLogin } from "@/const";
+import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -11,6 +14,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
+  Camera,
   Check,
   ChevronRight,
   CircleCheck,
@@ -19,6 +23,9 @@ import {
   Copy,
   ExternalLink,
   Info,
+  ImagePlus,
+  LoaderCircle,
+  LogIn,
   Map,
   MapPin,
   Menu,
@@ -26,7 +33,9 @@ import {
   Phone,
   Plane,
   Route,
+  Save,
   TrainFront,
+  Trash2,
   Utensils,
   X,
 } from "lucide-react";
@@ -333,7 +342,26 @@ function getMapUrls(destination: Destination) {
   return { google, amap: `https://ditu.amap.com/search?query=${query}` };
 }
 
+function readPhotoAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("사진 파일을 읽지 못했습니다."));
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      resolve(result.split(",")[1] ?? "");
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
+  const { loading: authLoading, isAuthenticated } = useAuth();
+  const utils = trpc.useUtils();
+  const fieldRecordsQuery = trpc.fieldRecords.list.useQuery(undefined, { enabled: isAuthenticated, retry: false });
+  const upsertRecordMutation = trpc.fieldRecords.upsert.useMutation();
+  const uploadPhotoMutation = trpc.fieldRecords.uploadPhoto.useMutation();
+  const deletePhotoMutation = trpc.fieldRecords.deletePhoto.useMutation();
+
   const tripStatus = useMemo(getTripStatus, []);
   const [area, setArea] = useState<Area>(getInitialArea);
   const [activeDay, setActiveDay] = useState(tripStatus.activeDay);
@@ -346,22 +374,14 @@ export default function Home() {
       return {};
     }
   });
-  const [noteState, setNoteState] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem("cvt200-field-notes") ?? "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [recordDrafts, setRecordDrafts] = useState<Record<string, { note: string; isChecked: boolean }>>({});
+  const [savingRecordKey, setSavingRecordKey] = useState<string | null>(null);
+  const [uploadingRecordKey, setUploadingRecordKey] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem("cvt200-field-checks", JSON.stringify(checkState));
   }, [checkState]);
-
-  useEffect(() => {
-    window.localStorage.setItem("cvt200-field-notes", JSON.stringify(noteState));
-  }, [noteState]);
 
   useEffect(() => {
     if (!toast) return;
@@ -382,8 +402,10 @@ export default function Home() {
   }, []);
 
   const currentDay = days.find((day) => day.id === activeDay) ?? days[0];
+  const storedRecords = useMemo(() => Object.fromEntries((fieldRecordsQuery.data ?? []).map((record) => [record.recordKey, record])), [fieldRecordsQuery.data]);
+  const getRecordValue = (recordKey: string) => recordDrafts[recordKey] ?? { note: storedRecords[recordKey]?.note ?? "", isChecked: storedRecords[recordKey]?.isChecked ?? false };
   const checkTotal = checklistGroups.flatMap((group) => group.items.map((_, index) => `${group.id}-${index}`));
-  const completed = checkTotal.filter((id) => checkState[id]).length;
+  const completed = checkTotal.filter((id) => id.startsWith("record-") ? getRecordValue(id).isChecked : checkState[id]).length;
   const progress = Math.round((completed / checkTotal.length) * 100);
   const heroAction = tripStatus.label.startsWith("D-")
     ? { label: "출발 전 우선", value: "이우 통역 예약", detail: "9/9–9/10 · 일 ¥350–400" }
@@ -403,6 +425,79 @@ export default function Home() {
       setToast("중문 주소를 복사했습니다.");
     } catch {
       setToast("주소를 길게 눌러 복사해 주세요.");
+    }
+  };
+
+  const saveRecord = async (recordKey: string, label: string, nextValue = getRecordValue(recordKey)) => {
+    if (!isAuthenticated) {
+      startLogin();
+      return;
+    }
+    setSavingRecordKey(recordKey);
+    try {
+      await upsertRecordMutation.mutateAsync({ recordKey, label, note: nextValue.note, isChecked: nextValue.isChecked });
+      await utils.fieldRecords.list.invalidate();
+      setRecordDrafts((current) => {
+        const next = { ...current };
+        delete next[recordKey];
+        return next;
+      });
+      setToast("상담 기록을 저장했습니다.");
+    } catch {
+      setToast("기록을 저장하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setSavingRecordKey(null);
+    }
+  };
+
+  const updateRecordDraft = (recordKey: string, patch: Partial<{ note: string; isChecked: boolean }>) => {
+    setRecordDrafts((current) => ({ ...current, [recordKey]: { ...getRecordValue(recordKey), ...patch } }));
+  };
+
+  const handlePhotoUpload = async (recordKey: string, label: string, file?: File) => {
+    if (!file) return;
+    if (!isAuthenticated) {
+      startLogin();
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setToast("JPG, PNG, WEBP 사진만 업로드할 수 있습니다.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setToast("사진은 8MB 이하로 업로드해 주세요.");
+      return;
+    }
+    setUploadingRecordKey(recordKey);
+    try {
+      const current = getRecordValue(recordKey);
+      const dataBase64 = await readPhotoAsBase64(file);
+      await uploadPhotoMutation.mutateAsync({
+        recordKey,
+        label,
+        note: current.note,
+        isChecked: current.isChecked,
+        fileName: file.name,
+        mimeType: file.type as "image/jpeg" | "image/png" | "image/webp",
+        dataBase64,
+      });
+      await utils.fieldRecords.list.invalidate();
+      setToast("현장 사진을 첨부했습니다.");
+    } catch (error) {
+      console.error(error);
+      setToast("사진을 올리지 못했습니다. 연결 상태를 확인해 주세요.");
+    } finally {
+      setUploadingRecordKey(null);
+    }
+  };
+
+  const handlePhotoDelete = async (photoId: number) => {
+    try {
+      await deletePhotoMutation.mutateAsync({ photoId });
+      await utils.fieldRecords.list.invalidate();
+      setToast("첨부 사진을 목록에서 삭제했습니다.");
+    } catch {
+      setToast("사진을 삭제하지 못했습니다. 다시 시도해 주세요.");
     }
   };
 
@@ -547,29 +642,37 @@ export default function Home() {
 
           {area === "checklist" && (
             <section className="content-view" aria-labelledby="checklist-heading">
-              <div className="view-heading checklist-heading"><div><span className="section-kicker">FIELD RECORD</span><h2 id="checklist-heading">상담의 <i>빈칸을</i> 없앱니다.</h2><p>업체마다 필수 정보를 그 자리에서 확인합니다. 체크 상태는 이 기기에 남아 다음 방문에도 이어집니다.</p></div><div className="progress-seal"><strong>{completed}<small> / {checkTotal.length}</small></strong><span>기록 완료</span></div></div>
+              <div className="view-heading checklist-heading"><div><span className="section-kicker">FIELD RECORD</span><h2 id="checklist-heading">상담의 <i>빈칸을</i> 없앱니다.</h2><p>상담 필수 기록은 계정에 저장되고, 메모별 현장 사진도 함께 보관됩니다.</p></div><div className="progress-seal"><strong>{completed}<small> / {checkTotal.length}</small></strong><span>기록 완료</span></div></div>
               <div className="progress-line"><i style={{ width: `${progress}%` }} /><span>{progress}% COMPLETE</span></div>
+              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>상담 기록과 사진을 저장하려면 로그인하세요.</b><small>저장된 내용은 같은 계정으로 어느 기기에서나 다시 확인할 수 있습니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
               <div className="check-groups">
                 {checklistGroups.map((group) => (
                   <section className="check-group" key={group.id}>
-                    <div className="check-group-head"><span>{group.label}</span><small>{group.items.filter((_, index) => checkState[`${group.id}-${index}`]).length} / {group.items.length}</small></div>
+                    <div className="check-group-head"><span>{group.label}</span><small>{group.items.filter((_, index) => group.id === "record" ? getRecordValue(`${group.id}-${index}`).isChecked : checkState[`${group.id}-${index}`]).length} / {group.items.length}</small></div>
                     <div>
                       {group.id === "record" && <div className="record-form-head"><span>기록 항목</span><span>현장 메모</span></div>}
                       {group.items.map((item, index) => {
                         const id = `${group.id}-${index}`;
-                        const hasNote = Boolean(noteState[id]?.trim());
                         const isRecordItem = group.id === "record";
-                        if (isRecordItem) return <div className={`record-form-row ${checkState[id] ? "done" : ""}`} key={id}>
+                        if (isRecordItem) {
+                          const value = getRecordValue(id);
+                          const savedRecord = storedRecords[id];
+                          return <div className={`record-form-row ${value.isChecked ? "done" : ""}`} key={id}>
                           <label className="record-item-label">
-                            <input type="checkbox" checked={Boolean(checkState[id])} onChange={() => setCheckState((current) => ({ ...current, [id]: !current[id] }))} />
+                            <input type="checkbox" checked={value.isChecked} onChange={() => updateRecordDraft(id, { isChecked: !value.isChecked })} />
                             <span className="box"><Check size={14} /></span>
                             <span>{item}</span>
                           </label>
                           <div className="record-note-field">
-                            <div><span>FIELD NOTE</span>{hasNote ? <b>저장됨</b> : <small>기기에 자동 저장</small>}</div>
-                            <textarea id={`note-${id}`} aria-label={`${item} 메모`} value={noteState[id] ?? ""} onChange={(event) => setNoteState((current) => ({ ...current, [id]: event.target.value }))} placeholder="상담 내용, 담당자 답변, 견적 조건, 확인할 증빙을 적으세요." rows={3} />
+                            <div className="record-note-meta"><span>FIELD NOTE</span><div><small>{savedRecord ? "계정에 저장됨" : "저장 전"}</small><button type="button" onClick={() => void saveRecord(id, item)} disabled={savingRecordKey === id || uploadingRecordKey === id}>{savingRecordKey === id ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />}{savingRecordKey === id ? "저장 중" : "저장"}</button></div></div>
+                            <textarea id={`note-${id}`} aria-label={`${item} 메모`} value={value.note} onChange={(event) => updateRecordDraft(id, { note: event.target.value })} onBlur={() => void saveRecord(id, item)} placeholder="상담 내용, 담당자 답변, 견적 조건, 확인할 증빙을 적으세요." rows={3} />
+                            <div className="record-photo-area">
+                              <label className={uploadingRecordKey === id ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handlePhotoUpload(id, item, file); }} /><span>{uploadingRecordKey === id ? <LoaderCircle size={14} className="spin" /> : <ImagePlus size={14} />}{uploadingRecordKey === id ? "사진 업로드 중" : "사진 촬영·업로드"}</span></label>
+                              {savedRecord?.photos?.length ? <div className="photo-grid">{savedRecord.photos.map((photo) => <figure key={photo.id}><img src={photo.url} alt={`${item} 첨부 사진`} /><button type="button" onClick={() => void handlePhotoDelete(photo.id)} aria-label={`${photo.fileName} 삭제`}><Trash2 size={13} /></button><figcaption>{photo.fileName}</figcaption></figure>)}</div> : null}
+                            </div>
                           </div>
                         </div>;
+                        }
                         return <label className={`simple-check-label ${checkState[id] ? "done" : ""}`} key={id}>
                           <input type="checkbox" checked={Boolean(checkState[id])} onChange={() => setCheckState((current) => ({ ...current, [id]: !current[id] }))} />
                           <span className="box"><Check size={14} /></span>
@@ -580,7 +683,7 @@ export default function Home() {
                   </section>
                 ))}
               </div>
-              <div className="check-actions"><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button><button className="reset-notes" type="button" onClick={() => setNoteState({})}>상담 메모 전체 삭제</button></div>
+              <div className="check-actions"><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button></div>
             </section>
           )}
 
