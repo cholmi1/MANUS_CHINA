@@ -668,7 +668,7 @@ export default function Home() {
 
           {area === "checklist" && (
             <section className="content-view" aria-labelledby="checklist-heading">
-              <div className="view-heading checklist-heading"><div><span className="section-kicker">FIELD RECORD</span><h2 id="checklist-heading">상담의 <i>빈칸을</i> 없앱니다.</h2><p>상담 필수 기록은 계정에 저장되고, 메모별 현장 사진도 함께 보관됩니다.</p></div><div className="progress-seal"><strong>{completed}<small> / {checkTotal.length}</small></strong><span>기록 완료</span></div></div>
+              <div className="view-heading checklist-heading"><div><span className="section-kicker">FIELD RECORD</span><h2 id="checklist-heading">상담의 <i>빈칸을</i> 없앱니다.</h2><p>상담 필수 기록은 계정에 저장되고, 엑셀에서는 카테고리별 시트와 사진 썸네일로 정리됩니다.</p></div><div className="progress-seal"><strong>{completed}<small> / {checkTotal.length}</small></strong><span>기록 완료</span></div></div>
               <div className="progress-line"><i style={{ width: `${progress}%` }} /><span>{progress}% COMPLETE</span></div>
               {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>상담 기록과 사진을 저장하려면 로그인하세요.</b><small>저장된 내용은 같은 계정으로 어느 기기에서나 다시 확인할 수 있습니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
               <div className="check-groups">
@@ -709,7 +709,7 @@ export default function Home() {
                   </section>
                 ))}
               </div>
-              <div className="check-actions"><button className="export-records" type="button" onClick={() => void handleExportRecords()} disabled={exportRecordsMutation.isPending}><FileSpreadsheet size={15} />{exportRecordsMutation.isPending ? "엑셀 생성 중" : "상담 기록 엑셀 내보내기"}</button><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button></div>
+              <div className="check-actions"><button className="export-records" type="button" onClick={() => void handleExportRecords()} disabled={exportRecordsMutation.isPending}><FileSpreadsheet size={15} />{exportRecordsMutation.isPending ? "엑셀 생성 중" : "카테고리별 엑셀 내보내기"}</button><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button></div>
             </section>
           )}
 
