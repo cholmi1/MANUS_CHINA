@@ -331,17 +331,30 @@ export default function Home() {
   const [activeDay, setActiveDay] = useState(tripStatus.activeDay);
   const [selectedDestination, setSelectedDestination] = useState<Destination | null>(null);
   const [toast, setToast] = useState("");
-  const [checkState, setCheckState] = useState<Record<string, boolean>>({});
+  const [checkState, setCheckState] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("cvt200-field-checks") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [noteState, setNoteState] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("cvt200-field-notes") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem("cvt200-field-checks");
-    if (saved) setCheckState(JSON.parse(saved));
-  }, []);
 
   useEffect(() => {
     window.localStorage.setItem("cvt200-field-checks", JSON.stringify(checkState));
   }, [checkState]);
+
+  useEffect(() => {
+    window.localStorage.setItem("cvt200-field-notes", JSON.stringify(noteState));
+  }, [noteState]);
 
   useEffect(() => {
     if (!toast) return;
@@ -529,13 +542,31 @@ export default function Home() {
                     <div>
                       {group.items.map((item, index) => {
                         const id = `${group.id}-${index}`;
-                        return <label className={checkState[id] ? "done" : ""} key={id}><input type="checkbox" checked={Boolean(checkState[id])} onChange={() => setCheckState((current) => ({ ...current, [id]: !current[id] }))} /><span className="box"><Check size={14} /></span><span>{item}</span></label>;
+                        const hasNote = Boolean(noteState[id]?.trim());
+                        const isRecordItem = group.id === "record";
+                        return <div className="check-item" key={id}>
+                          <label className={checkState[id] ? "done" : ""}>
+                            <input type="checkbox" checked={Boolean(checkState[id])} onChange={() => setCheckState((current) => ({ ...current, [id]: !current[id] }))} />
+                            <span className="box"><Check size={14} /></span>
+                            <span>{item}</span>
+                            {isRecordItem && hasNote && <span className="memo-mark">메모</span>}
+                          </label>
+                          {isRecordItem && <div className="record-note">
+                            <button className={openNoteId === id ? "open" : ""} type="button" onClick={() => setOpenNoteId((current) => current === id ? null : id)} aria-expanded={openNoteId === id}>
+                              <BookOpen size={13} />{hasNote ? "현장 메모 수정" : "현장 메모 작성"}<ChevronRight size={13} />
+                            </button>
+                            {openNoteId === id && <div className="note-editor">
+                              <div><label htmlFor={`note-${id}`}>현장 메모</label><span>기기에 자동 저장</span></div>
+                              <textarea id={`note-${id}`} value={noteState[id] ?? ""} onChange={(event) => setNoteState((current) => ({ ...current, [id]: event.target.value }))} placeholder="상담 내용, 담당자 답변, 견적 조건, 확인할 증빙을 기록하세요." rows={4} autoFocus />
+                            </div>}
+                          </div>}
+                        </div>;
                       })}
                     </div>
                   </section>
                 ))}
               </div>
-              <button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button>
+              <div className="check-actions"><button className="reset-checks" type="button" onClick={() => setCheckState({})}>체크 상태 초기화</button><button className="reset-notes" type="button" onClick={() => { setNoteState({}); setOpenNoteId(null); }}>상담 메모 전체 삭제</button></div>
             </section>
           )}
 
