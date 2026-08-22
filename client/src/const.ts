@@ -1,4 +1,5 @@
 import { OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
+import { getMissingOauthEnvironment, LoginConfigurationError } from "@/lib/runtimeNotices";
 
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
@@ -15,6 +16,8 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 export const startLogin = () => {
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
+  const missingKeys = getMissingOauthEnvironment(oauthPortalUrl, appId);
+  if (missingKeys.length) throw new LoginConfigurationError(missingKeys);
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
 
   const nonce = crypto.randomUUID();

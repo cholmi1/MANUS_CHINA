@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { startLogin } from "./const";
+import { emitNetlifyApiProxyIssue } from "./lib/runtimeNotices";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -21,10 +22,17 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   startLogin();
 };
 
+const reportApiProxyFailure = (error: unknown) => {
+  const status = error instanceof TRPCClientError ? error.data?.httpStatus : undefined;
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  emitNetlifyApiProxyIssue({ status, message });
+};
+
 queryClient.getQueryCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
+    reportApiProxyFailure(error);
     console.error("[API Query Error]", error);
   }
 });
@@ -33,6 +41,7 @@ queryClient.getMutationCache().subscribe(event => {
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
+    reportApiProxyFailure(error);
     console.error("[API Mutation Error]", error);
   }
 });
@@ -62,11 +71,18 @@ const trpcClient = trpc.createClient({
         }
         return {};
       },
-      fetch(input, init) {
-        return globalThis.fetch(input, {
+      async fetch(input, init) {
+        try {
+          const response = await globalThis.fetch(input, {
           ...(init ?? {}),
           credentials: "include",
-        });
+          });
+          emitNetlifyApiProxyIssue({ status: response.status });
+          return response;
+        } catch (error) {
+          reportApiProxyFailure(error);
+          throw error;
+        }
       },
     }),
   ],

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { LoginConfigurationError, NETLIFY_PROXY_ERROR_EVENT, type ApiProxyIssue } from "@/lib/runtimeNotices";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -387,6 +388,9 @@ export default function Home() {
   const [activeDay, setActiveDay] = useState(tripStatus.activeDay);
   const [selectedDestination, setSelectedDestination] = useState<Destination | null>(null);
   const [toast, setToast] = useState("");
+  const [isStartingLogin, setIsStartingLogin] = useState(false);
+  const [loginSetupError, setLoginSetupError] = useState("");
+  const [apiProxyIssue, setApiProxyIssue] = useState<ApiProxyIssue | null>(null);
   const [recordDrafts, setRecordDrafts] = useState<Record<string, { note: string; isChecked: boolean; vendorName: string }>>({});
   const [photoCaptionDrafts, setPhotoCaptionDrafts] = useState<Record<number, string>>({});
   const [checklistDrafts, setChecklistDrafts] = useState<Record<string, ChecklistDraft>>({});
@@ -425,6 +429,12 @@ export default function Home() {
     return () => window.removeEventListener("hashchange", syncArea);
   }, []);
 
+  useEffect(() => {
+    const showProxyIssue = (event: Event) => setApiProxyIssue((event as CustomEvent<ApiProxyIssue>).detail ?? { message: "API 프록시 연결을 확인하지 못했습니다." });
+    window.addEventListener(NETLIFY_PROXY_ERROR_EVENT, showProxyIssue);
+    return () => window.removeEventListener(NETLIFY_PROXY_ERROR_EVENT, showProxyIssue);
+  }, []);
+
   const currentDay = days.find((day) => day.id === activeDay) ?? days[0];
   const storedRecords = useMemo(() => Object.fromEntries((fieldRecordsQuery.data ?? []).map((record) => [record.recordKey, record])), [fieldRecordsQuery.data]);
   const storedChecklist = useMemo(() => Object.fromEntries((tripChecklistQuery.data ?? []).map((item) => [item.itemKey, item])), [tripChecklistQuery.data]);
@@ -447,6 +457,26 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const requestLogin = () => {
+    if (isStartingLogin) return;
+    setLoginSetupError("");
+    setIsStartingLogin(true);
+    window.requestAnimationFrame(() => {
+      try {
+        startLogin();
+        window.setTimeout(() => setIsStartingLogin(false), 1400);
+      } catch (error) {
+        setIsStartingLogin(false);
+        if (error instanceof LoginConfigurationError) {
+          setLoginSetupError(error.message);
+          return;
+        }
+        console.error(error);
+        setToast("로그인 연결을 시작하지 못했습니다. 네트워크 상태를 확인해 주세요.");
+      }
+    });
+  };
+
   const handleCopy = async () => {
     if (!selectedDestination) return;
     try {
@@ -459,7 +489,7 @@ export default function Home() {
 
   const saveRecord = async (recordKey: string, label: string, nextValue = getRecordValue(recordKey)) => {
     if (!isAuthenticated) {
-      startLogin();
+      requestLogin();
       return;
     }
     setSavingRecordKey(recordKey);
@@ -486,7 +516,7 @@ export default function Home() {
   const updateChecklistDraft = (itemKey: string, patch: Partial<ChecklistDraft>) => setChecklistDrafts((current) => ({ ...current, [itemKey]: { ...getChecklistValue(itemKey), ...patch } }));
 
   const saveChecklist = async (itemKey: string, groupKey: string, label: string, nextValue = getChecklistValue(itemKey)) => {
-    if (!isAuthenticated) return startLogin();
+    if (!isAuthenticated) return requestLogin();
     setSavingChecklistKey(itemKey);
     try {
       await upsertTripChecklistMutation.mutateAsync({ itemKey, groupKey, label, note: nextValue.note, isChecked: nextValue.isChecked });
@@ -498,7 +528,7 @@ export default function Home() {
 
   const handleChecklistEvidenceUpload = async (itemKey: string, groupKey: string, label: string, file?: File) => {
     if (!file) return;
-    if (!isAuthenticated) return startLogin();
+    if (!isAuthenticated) return requestLogin();
     if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) return setToast("JPG, PNG, WEBP, PDF 파일을 10MB 이하로 올려주세요.");
     setUploadingChecklistKey(itemKey);
     try {
@@ -514,7 +544,7 @@ export default function Home() {
   };
 
   const saveExpense = async () => {
-    if (!isAuthenticated) return startLogin();
+    if (!isAuthenticated) return requestLogin();
     const amount = Number(expenseDraft.amount.replaceAll(",", ""));
     if (!expenseDraft.title.trim() || !Number.isInteger(amount) || amount < 0) return setToast("비용명과 0 이상의 금액을 입력해 주세요.");
     setSavingExpense(true);
@@ -541,7 +571,7 @@ export default function Home() {
   const handlePhotoUpload = async (recordKey: string, label: string, file?: File) => {
     if (!file) return;
     if (!isAuthenticated) {
-      startLogin();
+      requestLogin();
       return;
     }
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
@@ -588,7 +618,7 @@ export default function Home() {
 
   const savePhotoCaption = async (photoId: number, nextCaption: string) => {
     if (!isAuthenticated) {
-      startLogin();
+      requestLogin();
       return;
     }
     setSavingCaptionId(photoId);
@@ -613,7 +643,7 @@ export default function Home() {
   const updateVendorRecordDraft = (vendorId: number, recordKey: string, patch: Partial<ChecklistDraft>) => setVendorConsultationDrafts((current) => ({ ...current, [vendorRecordDraftKey(vendorId, recordKey)]: { ...getVendorRecordValue(vendorId, recordKey), ...patch } }));
 
   const saveVendor = async () => {
-    if (!isAuthenticated) return startLogin();
+    if (!isAuthenticated) return requestLogin();
     if (!vendorDraft.name.trim()) return setToast("업체명을 입력해 주세요.");
     setSavingVendor(true);
     try {
@@ -673,7 +703,7 @@ export default function Home() {
 
   const handleExportRecords = async () => {
     if (!isAuthenticated) {
-      startLogin();
+      requestLogin();
       return;
     }
     try {
@@ -839,7 +869,7 @@ export default function Home() {
           {area === "consultations" && (
             <section className="content-view" aria-labelledby="consultation-heading">
               <div className="view-heading checklist-heading"><div><span className="section-kicker">VENDOR CONVERSATIONS</span><h2 id="consultation-heading">업체별 <i>상담 기록</i>을 남깁니다.</h2><p>조사처에서 만난 업체를 폴더로 추가한 뒤, 각 업체의 담당자·부스·상담 내용·현장 사진을 독립적으로 보관합니다.</p></div><div className="consultation-actions"><button className="export-records" type="button" onClick={() => void handleExportRecords()} disabled={exportRecordsMutation.isPending}><FileSpreadsheet size={14} />{exportRecordsMutation.isPending ? "엑셀 생성 중" : "업체별 엑셀"}</button><div className="progress-seal"><strong>{consultationCompleted}<small> / {consultationItems.length}</small></strong><span>선택 업체 완료</span></div></div></div>
-              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>상담 기록과 사진을 저장하려면 로그인하세요.</b><small>저장된 내용은 같은 계정으로 어느 기기에서나 다시 확인할 수 있습니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
+              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>상담 기록과 사진을 저장하려면 로그인하세요.</b><small>저장된 내용은 같은 계정으로 어느 기기에서나 다시 확인할 수 있습니다.</small></span></div><button type="button" onClick={requestLogin} disabled={isStartingLogin}>{isStartingLogin ? <><LoaderCircle size={13} className="spin" />연결 중</> : "로그인"}</button></div>}
               <div className="vendor-workspace">
                 <aside className="vendor-folder-panel"><div className="vendor-folder-head"><span>업체 폴더</span><small>{(vendorsQuery.data ?? []).length}개</small></div><div className="vendor-folder-list">{(vendorsQuery.data ?? []).map((vendor) => <button type="button" className={selectedVendor?.id === vendor.id ? "active" : ""} key={vendor.id} onClick={() => selectVendor(vendor)}><b>{vendor.name}</b><small>{vendor.contactName || vendor.booth || "상담 기록 열기"}</small></button>)}</div><button className="new-vendor-button" type="button" onClick={() => { setSelectedVendorId(null); setVendorDraft({ id: undefined, name: "", contactName: "", booth: "" }); }}>+ 새 업체 폴더</button><div className="vendor-form"><span>VENDOR FOLDER</span><input value={vendorDraft.name} onChange={(event) => setVendorDraft((current) => ({ ...current, name: event.target.value }))} placeholder="업체명 *" maxLength={160} /><input value={vendorDraft.contactName} onChange={(event) => setVendorDraft((current) => ({ ...current, contactName: event.target.value }))} placeholder="담당자" maxLength={120} /><input value={vendorDraft.booth} onChange={(event) => setVendorDraft((current) => ({ ...current, booth: event.target.value }))} placeholder="부스 번호" maxLength={120} /><button type="button" onClick={() => void saveVendor()} disabled={savingVendor}>{savingVendor ? "저장 중" : vendorDraft.id ? "업체 정보 저장" : "업체 폴더 추가"}</button>{selectedVendor && <button className="delete-vendor-button" type="button" onClick={() => void deleteSelectedVendor()}>선택 업체 삭제</button>}</div></aside>
                 <div className="vendor-records-panel">{selectedVendor ? <><div className="vendor-record-title"><span>SELECTED VENDOR</span><h3>{selectedVendor.name}</h3><p>{[selectedVendor.contactName, selectedVendor.booth].filter(Boolean).join(" · ") || "담당자와 부스 정보를 입력해 주세요."}</p></div><div className="check-groups"><section className="check-group"><div className="record-form-head"><span>상담 항목</span><span>이 업체의 현장 메모</span></div>{consultationItems.map((item, index) => {
@@ -854,7 +884,7 @@ export default function Home() {
             <section className="content-view" aria-labelledby="checklist-heading">
               <div className="view-heading checklist-heading"><div><span className="section-kicker">PRE-TRIP CONTROL</span><h2 id="checklist-heading">출발 전 <i>준비와 증빙</i>을 확인합니다.</h2><p>준비 상태, 예약 진행 메모와 확인서·보험증·QR 캡처를 항목별로 저장합니다.</p></div><div className="progress-seal"><strong>{completed}<small> / {checkTotal.length}</small></strong><span>준비 완료</span></div></div>
               <div className="progress-line"><i style={{ width: `${progress}%` }} /><span>{progress}% COMPLETE</span></div>
-              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>준비 체크와 증빙을 저장하려면 로그인하세요.</b><small>사진·PDF 확인서를 안전하게 계정에 보관합니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
+              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>준비 체크와 증빙을 저장하려면 로그인하세요.</b><small>사진·PDF 확인서를 안전하게 계정에 보관합니다.</small></span></div><button type="button" onClick={requestLogin} disabled={isStartingLogin}>{isStartingLogin ? <><LoaderCircle size={13} className="spin" />연결 중</> : "로그인"}</button></div>}
               <div className="check-groups">{checklistGroups.map((group) => <section className="check-group" key={group.id}><div className="check-group-head"><span>{group.label}</span><small>{group.items.filter((_, index) => getChecklistValue(`${group.id}-${index}`).isChecked).length} / {group.items.length}</small></div>{group.items.map((item, index) => {
                 const itemKey = `${group.id}-${index}`; const value = getChecklistValue(itemKey); const saved = storedChecklist[itemKey];
                 return <article className={`prep-item ${value.isChecked ? "done" : ""}`} key={itemKey}><label><input type="checkbox" checked={value.isChecked} onChange={() => updateChecklistDraft(itemKey, { isChecked: !value.isChecked })} /><span className="box"><Check size={14} /></span><b>{item}</b></label><div className="prep-item-body"><div className="record-note-meta"><span>PRE-TRIP NOTE</span><button type="button" onClick={() => void saveChecklist(itemKey, group.id, item)} disabled={savingChecklistKey === itemKey}>{savingChecklistKey === itemKey ? <LoaderCircle size={13} className="spin" /> : <Save size={13} />}{savingChecklistKey === itemKey ? "저장 중" : "저장"}</button></div><textarea value={value.note} onChange={(event) => updateChecklistDraft(itemKey, { note: event.target.value })} onBlur={() => void saveChecklist(itemKey, group.id, item)} placeholder="예약 진행 상태, 확인번호, 준비 메모를 기록하세요." rows={2} /><div className="proof-row"><label className={uploadingChecklistKey === itemKey ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleChecklistEvidenceUpload(itemKey, group.id, item, file); }} /><span>{uploadingChecklistKey === itemKey ? <LoaderCircle size={14} className="spin" /> : <FileSpreadsheet size={14} />}{uploadingChecklistKey === itemKey ? "파일 업로드 중" : "증빙 사진·PDF 업로드"}</span></label>{saved?.evidence?.map((file) => <a className="proof-file" href={file.url} target="_blank" rel="noreferrer" key={file.id}><FileSpreadsheet size={13} /><span>{file.fileName}</span><button type="button" onClick={(event) => { event.preventDefault(); void deleteChecklistEvidence(file.id); }} aria-label={`${file.fileName} 삭제`}><Trash2 size={12} /></button></a>)}</div></div></article>;
@@ -887,7 +917,7 @@ export default function Home() {
           {area === "expenses" && (
             <section className="content-view" aria-labelledby="expense-heading">
               <div className="view-heading checklist-heading"><div><span className="section-kicker">TRIP EXPENSE LEDGER</span><h2 id="expense-heading">출장 비용을 <i>항목별로</i> 정리합니다.</h2><p>교통비, 식대, 숙박 등 지출을 기록하고 영수증 사진·PDF를 함께 보관합니다. 통화별 집계는 입력 즉시 갱신됩니다.</p></div><div className="progress-seal"><strong>{(expensesQuery.data ?? []).length}<small> 건</small></strong><span>비용 기록</span></div></div>
-              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>정산서와 영수증을 저장하려면 로그인하세요.</b><small>입력한 비용과 영수증은 계정에 보관됩니다.</small></span></div><button type="button" onClick={() => startLogin()}>로그인</button></div>}
+              {!authLoading && !isAuthenticated && <div className="record-login-banner"><div><LogIn size={20} /><span><b>정산서와 영수증을 저장하려면 로그인하세요.</b><small>입력한 비용과 영수증은 계정에 보관됩니다.</small></span></div><button type="button" onClick={requestLogin} disabled={isStartingLogin}>{isStartingLogin ? <><LoaderCircle size={13} className="spin" />연결 중</> : "로그인"}</button></div>}
               <div className="expense-summary">{(["KRW", "CNY", "USD"] as const).map((currency) => <div key={currency}><span>{currency}</span><strong>{new Intl.NumberFormat("ko-KR").format(expenseTotals[currency] ?? 0)}</strong><small>{currency === "KRW" ? "원" : currency === "CNY" ? "위안" : "달러"}</small></div>)}</div>
               <section className="expense-editor"><div className="expense-editor-head"><div><span>NEW / EDIT EXPENSE</span><h3>{expenseDraft.id ? "비용 항목 수정" : "새 비용 항목"}</h3></div>{expenseDraft.id && <button type="button" onClick={() => setExpenseDraft(blankExpenseDraft())}>새 항목 작성</button>}</div><div className="expense-category-row">{expenseCategories.map(([key, label]) => <button type="button" className={expenseDraft.category === key ? "active" : ""} onClick={() => setExpenseDraft((current) => ({ ...current, category: key }))} key={key}>{label}</button>)}</div><div className="expense-form-grid"><label><span>비용명</span><input value={expenseDraft.title} onChange={(event) => setExpenseDraft((current) => ({ ...current, title: event.target.value }))} placeholder="예: 선전공항 → 호텔 디디" maxLength={160} /></label><label><span>금액</span><input inputMode="numeric" value={expenseDraft.amount} onChange={(event) => setExpenseDraft((current) => ({ ...current, amount: event.target.value.replace(/[^0-9,]/g, "") }))} placeholder="0" /></label><label><span>통화</span><select value={expenseDraft.currency} onChange={(event) => setExpenseDraft((current) => ({ ...current, currency: event.target.value as ExpenseDraft["currency"] }))}><option value="KRW">KRW · 원</option><option value="CNY">CNY · 위안</option><option value="USD">USD · 달러</option></select></label><label><span>지출일</span><input type="date" value={expenseDraft.spentAt} onChange={(event) => setExpenseDraft((current) => ({ ...current, spentAt: event.target.value }))} /></label></div><label className="expense-note"><span>상세 메모</span><textarea value={expenseDraft.note} onChange={(event) => setExpenseDraft((current) => ({ ...current, note: event.target.value }))} placeholder="결제 수단, 동행자, 정산 메모를 적으세요." rows={3} /></label><div className="expense-actions"><button className="expense-save" type="button" onClick={() => void saveExpense()} disabled={savingExpense}>{savingExpense ? <LoaderCircle size={15} className="spin" /> : <Save size={15} />}{savingExpense ? "저장 중" : "비용 저장"}</button><label className={uploadingReceipt ? "photo-upload is-uploading" : "photo-upload"}><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void handleReceiptUpload(file); }} /><span>{uploadingReceipt ? <LoaderCircle size={14} className="spin" /> : <FileSpreadsheet size={14} />}{uploadingReceipt ? "영수증 업로드 중" : "영수증 사진·PDF 첨부"}</span></label></div></section>
               <section className="expense-list"><div className="check-group-head"><span>입력된 비용</span><small>{(expensesQuery.data ?? []).length}건</small></div>{(expensesQuery.data ?? []).length ? (expensesQuery.data ?? []).map((expense) => <article className="expense-row" key={expense.id}><div className="expense-row-main"><span>{expenseCategories.find(([key]) => key === expense.category)?.[1] ?? "기타"}</span><div><h3>{expense.title}</h3><p>{new Date(expense.spentAt).toLocaleDateString("ko-KR")} · {expense.note || "메모 없음"}</p></div><strong>{expense.currency} {new Intl.NumberFormat("ko-KR").format(expense.amount)}</strong></div><div className="receipt-list">{expense.receipts.map((receipt) => <span key={receipt.id}><a href={receipt.url} target="_blank" rel="noreferrer"><FileSpreadsheet size={13} />{receipt.fileName}</a><button type="button" onClick={() => void (async () => { try { await deleteReceiptMutation.mutateAsync({ receiptId: receipt.id }); await utils.expenses.list.invalidate(); setToast("영수증을 삭제했습니다."); } catch { setToast("영수증을 삭제하지 못했습니다."); } })()} aria-label={`${receipt.fileName} 삭제`}><Trash2 size={12} /></button></span>)}</div><div className="expense-row-actions"><button type="button" onClick={() => setExpenseDraft({ id: expense.id, category: expense.category, title: expense.title, amount: String(expense.amount), currency: expense.currency as ExpenseDraft["currency"], spentAt: new Date(expense.spentAt).toISOString().slice(0, 10), note: expense.note })}>수정</button><button type="button" onClick={() => void (async () => { try { await deleteExpenseMutation.mutateAsync({ expenseId: expense.id }); await utils.expenses.list.invalidate(); if (expenseDraft.id === expense.id) setExpenseDraft(blankExpenseDraft()); setToast("비용 항목을 삭제했습니다."); } catch { setToast("비용 항목을 삭제하지 못했습니다."); } })()}>삭제</button></div></article>) : <div className="expense-empty"><ReceiptText size={24} /><p>아직 기록한 비용이 없습니다. 위에서 카테고리와 금액을 선택해 첫 정산 항목을 추가하세요.</p></div>}</section>
@@ -906,6 +936,9 @@ export default function Home() {
       </nav>
 
       {selectedDestination && <DestinationModal destination={selectedDestination} onClose={() => setSelectedDestination(null)} onCopy={handleCopy} />}
+      {(isStartingLogin || exportRecordsMutation.isPending) && <div className="activity-overlay" role="status" aria-live="polite" aria-busy="true"><div className="activity-card"><LoaderCircle size={30} className="spin" /><span>{isStartingLogin ? "LOGIN CONNECTION" : "FIELD EXPORT"}</span><strong>{isStartingLogin ? "보안 로그인 연결을 준비하고 있습니다." : "업체별 상담기록을 엑셀 파일로 정리하고 있습니다."}</strong><small>{isStartingLogin ? "잠시 후 인증 화면으로 이동합니다." : "사진 썸네일과 캡션을 함께 포함합니다."}</small></div></div>}
+      {loginSetupError && <div className="service-notice-overlay" role="dialog" aria-modal="true" aria-labelledby="login-setup-title"><section className="service-notice"><button className="close-modal" type="button" onClick={() => setLoginSetupError("")} aria-label="안내 닫기"><X size={17} /></button><AlertTriangle size={23} /><span>LOGIN SETUP REQUIRED</span><h2 id="login-setup-title">로그인 설정이 필요합니다.</h2><p>{loginSetupError}</p><p>Netlify의 <b>Site configuration → Environment variables</b>에서 두 공개 값을 입력하고 다시 배포해 주세요.</p><button className="notice-primary" type="button" onClick={() => setLoginSetupError("")}>확인</button></section></div>}
+      {apiProxyIssue && <div className="service-notice-overlay" role="dialog" aria-modal="true" aria-labelledby="proxy-issue-title"><section className="service-notice"><button className="close-modal" type="button" onClick={() => setApiProxyIssue(null)} aria-label="안내 닫기"><X size={17} /></button><AlertTriangle size={23} /><span>API CONNECTION CHECK</span><h2 id="proxy-issue-title">서비스 연결을 확인해 주세요.</h2><p>저장·로그인·내보내기를 처리하는 API에 연결하지 못했습니다. Netlify 프록시와 기존 백엔드 상태를 확인한 뒤 다시 시도해 주세요.</p><p>{apiProxyIssue.status ? `연결 상태 코드: ${apiProxyIssue.status}` : "네트워크 연결 또는 프록시 응답을 확인해 주세요."}</p><div className="notice-actions"><button type="button" onClick={() => setApiProxyIssue(null)}>닫기</button><button className="notice-primary" type="button" onClick={() => window.location.reload()}>새로고침</button></div></section></div>}
       {toast && <div className="toast" role="status"><CircleCheck size={17} />{toast}</div>}
     </div>
   );

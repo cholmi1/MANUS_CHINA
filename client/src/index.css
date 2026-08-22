@@ -401,6 +401,22 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .toast { position: fixed; z-index: 130; bottom: 28px; left: 50%; display: flex; align-items: center; gap: 7px; padding: 11px 15px; background: var(--ink); color: white; box-shadow: 0 9px 24px rgb(0 0 0 / .2); font-size: 12px; transform: translateX(-50%); animation: toast-in 180ms cubic-bezier(.23, 1, .32, 1) both; }
 .toast svg { color: #93d8c8; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.activity-overlay, .service-notice-overlay { position: fixed; z-index: 140; inset: 0; display: grid; place-items: center; padding: 22px; background: rgb(21 34 44 / .54); backdrop-filter: blur(4px); animation: overlay-in 160ms ease both; }
+.activity-card, .service-notice { width: min(430px, 100%); padding: 27px; border-top: 3px solid var(--jade); background: var(--paper); box-shadow: 0 26px 70px rgb(0 0 0 / .25); animation: modal-in 220ms cubic-bezier(.23, 1, .32, 1) both; }
+.activity-card { display: grid; justify-items: center; gap: 8px; text-align: center; }
+.activity-card svg { color: var(--jade); }
+.activity-card span, .service-notice > span { color: var(--jade); font-family: var(--mono); font-size: 10px; font-weight: 700; letter-spacing: .12em; }
+.activity-card strong { color: var(--ink); font-family: var(--serif); font-size: 20px; line-height: 1.35; letter-spacing: -.045em; }
+.activity-card small { color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.service-notice { position: relative; border-top-color: var(--vermilion); }
+.service-notice > svg { color: var(--vermilion); }
+.service-notice > span { display: block; margin-top: 10px; color: var(--vermilion); }
+.service-notice h2 { margin: 7px 0 12px; color: var(--ink); font-family: var(--serif); font-size: 28px; line-height: 1.15; letter-spacing: -.065em; }
+.service-notice p { margin: 8px 0; color: var(--ink-soft); font-size: 13px; line-height: 1.65; }
+.service-notice .notice-primary, .notice-actions button { min-height: 40px; padding: 8px 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font-size: 12px; font-weight: 700; }
+.service-notice .notice-primary { margin-top: 13px; border-color: var(--vermilion); background: var(--vermilion); color: white; }
+.notice-actions { display: flex; gap: 8px; margin-top: 16px; }
+.notice-actions .notice-primary { margin-top: 0; }
 .mobile-nav { display: none; }
 
 @media (max-width: 900px) {
@@ -483,6 +499,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   .booking-table-wrap { margin-inline: -16px; border-inline: 0; }
   .destination-modal { padding: 24px 18px 19px; }
   .destination-modal h2 { font-size: 27px; }
+  .activity-card, .service-notice { padding: 23px 18px 19px; }
+  .service-notice h2 { font-size: 25px; }
   .address-panel strong { font-size: 18px; }
   .modal-actions { grid-template-columns: 1fr; }
 }
